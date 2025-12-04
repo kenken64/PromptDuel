@@ -1,0 +1,30 @@
+{
+  "name": "prompt-duel-root",
+  "private": true,
+  "scripts": {
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "husky": "^8.0.0",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2"
+  },
+  "lint-staged": {
+    "backend/**/*.{ts,tsx}": [
+      "eslint --config backend/.eslintrc.json --fix",
+      "prettier --config backend/.prettierrc --write"
+    ],
+    "frontend/**/*.{ts,tsx}": [
+      "eslint --config frontend/.eslintrc.json --fix",
+      "prettier --config frontend/.prettierrc --write"
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+@import "tailwindcss";
+@import "https://unpkg.com/nes.css@latest/css/nes.min.css";
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Press Start 2P', cursive;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Mobile viewport fix */
+@supports (-webkit-touch-callout: none) {
+  body {
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* Custom scrollbar for judge conversation */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #212529;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #92cc41;
+  border: 2px solid #212529;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #76c442;
+}
+
+/* Pixel perfect animations */
+@keyframes pixel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pixel-pulse {
+  animation: pixel-pulse 2s ease-in-out infinite;
+}
+
+/* NES-style overrides */
+.nes-container {
+  margin-bottom: 1rem;
+}
+
+.nes-btn {
+  font-family: 'Press Start 2P', cursive;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Improve touch targets on mobile */
+@media (max-width: 640px) {
+  .nes-btn {
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+  }
+  
+  button, a {
+    min-height: 44px;
+  }
+}
+
+/* Responsive text sizing */
+.nes-container.with-title > .title {
+  font-size: clamp(0.7rem, 3vw, 1rem);
+}
+
+/* Fix overflow issues on mobile */
+.container {
+  max-width: 100%;
+}
