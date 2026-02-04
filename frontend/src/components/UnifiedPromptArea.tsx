@@ -6,6 +6,7 @@ interface PlayerState {
   score: number;
   isReady: boolean;
   promptsUsed: number;
+  hasEnded: boolean;
 }
 
 interface UnifiedPromptAreaProps {
@@ -15,6 +16,9 @@ interface UnifiedPromptAreaProps {
   isActive: boolean;
   onPromptChange: (player: Player, prompt: string) => void;
   onSubmit: (player: Player) => void;
+  onEndPrompts: (player: Player) => void;
+  player1Processing?: boolean;
+  player2Processing?: boolean;
 }
 
 export function UnifiedPromptArea({
@@ -24,7 +28,11 @@ export function UnifiedPromptArea({
   isActive,
   onPromptChange,
   onSubmit,
+  onEndPrompts,
+  player1Processing = false,
+  player2Processing = false,
 }: UnifiedPromptAreaProps) {
+  const isProcessing = player1Processing || player2Processing;
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
   const isPlayer1Turn = currentTurn === 'player1';
 
@@ -59,6 +67,9 @@ export function UnifiedPromptArea({
               <span>{player1.promptsUsed}/7</span>
             </div>
             {player1.isReady && <i className="nes-icon check is-small"></i>}
+            {player1.hasEnded && (
+              <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
+            )}
           </div>
         </div>
 
@@ -90,6 +101,9 @@ export function UnifiedPromptArea({
               <span>{player2.promptsUsed}/7</span>
             </div>
             {player2.isReady && <i className="nes-icon check is-small"></i>}
+            {player2.hasEnded && (
+              <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
+            )}
           </div>
         </div>
       </div>
@@ -97,9 +111,9 @@ export function UnifiedPromptArea({
       {/* Turn Indicator */}
       {isActive && (
         <div className="mb-4 text-center">
-          <div className={`nes-badge ${isPlayer1Turn ? 'is-error' : 'is-success'}`}>
+          <div className={`nes-badge ${currentPlayer.hasEnded ? 'is-dark' : isPlayer1Turn ? 'is-error' : 'is-success'}`}>
             <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.8rem)' }}>
-              {currentPlayer.name}'s Turn!
+              {currentPlayer.hasEnded ? `${currentPlayer.name} has ended` : `${currentPlayer.name}'s Turn!`}
             </span>
           </div>
         </div>
@@ -120,7 +134,7 @@ export function UnifiedPromptArea({
           <textarea
             value={currentPlayer.prompt}
             onChange={(e) => onPromptChange(currentTurn, e.target.value)}
-            disabled={!isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= 7}
+            disabled={!isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= 7 || currentPlayer.hasEnded}
             className="nes-textarea"
             style={{
               minHeight: '150px',
@@ -131,9 +145,11 @@ export function UnifiedPromptArea({
             placeholder={
               !isActive
                 ? 'Waiting to start...'
-                : currentPlayer.promptsUsed >= 7
-                  ? "You've used all your prompts!"
-                  : 'Write your creative prompt here...'
+                : currentPlayer.hasEnded
+                  ? "You've ended your prompts!"
+                  : currentPlayer.promptsUsed >= 7
+                    ? "You've used all your prompts!"
+                    : 'Write your creative prompt here...'
             }
           />
         </div>
@@ -164,22 +180,44 @@ export function UnifiedPromptArea({
           !isActive ||
           !currentPlayer.prompt.trim() ||
           currentPlayer.isReady ||
-          currentPlayer.promptsUsed >= 7
+          currentPlayer.promptsUsed >= 7 ||
+          currentPlayer.hasEnded ||
+          isProcessing
         }
         className={`nes-btn ${isPlayer1Turn ? 'is-primary' : 'is-success'}`}
         type="button"
         style={{
           width: '100%',
-          marginBottom: '1rem',
+          marginBottom: '0.5rem',
           fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
           minHeight: '44px',
+          opacity: isProcessing ? 0.5 : 1,
         }}
       >
-        {currentPlayer.isReady ? '✓ Submitted!' : '→ Submit Prompt'}
+        {isProcessing ? '⏳ Claude is working...' : currentPlayer.hasEnded ? '✗ Ended' : currentPlayer.isReady ? '✓ Submitted!' : '→ Submit Prompt'}
       </button>
 
+      {/* End Prompts Early Button */}
+      {isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
+        <button
+          onClick={() => onEndPrompts(currentTurn)}
+          disabled={isProcessing}
+          className="nes-btn is-error"
+          type="button"
+          style={{
+            width: '100%',
+            marginBottom: '1rem',
+            fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
+            minHeight: '36px',
+            opacity: isProcessing ? 0.5 : 1,
+          }}
+        >
+          {isProcessing ? 'Claude is working...' : `End My Prompts Early (${currentPlayer.promptsUsed}/7 used)`}
+        </button>
+      )}
+
       {/* Tips */}
-      {isActive && !currentPlayer.isReady && currentPlayer.promptsUsed < 7 && (
+      {isActive && !currentPlayer.isReady && currentPlayer.promptsUsed < 7 && !currentPlayer.hasEnded && (
         <div
           className="nes-container is-rounded"
           style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', padding: '0.8rem', lineHeight: '1.4' }}

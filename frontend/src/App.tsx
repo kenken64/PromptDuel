@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { UnifiedPromptArea } from './components/UnifiedPromptArea';
 import { Timer } from './components/Timer';
 import { DuelResults } from './components/DuelResults';
 import { CombinedChat } from './components/CombinedChat';
 import { InfoTabs } from './components/InfoTabs';
-import { LoginPage } from './components/LoginPage';
+import { LandingPage } from './components/LandingPage';
+import { GroupSetup } from './components/GroupSetup';
 
 type Player = 'player1' | 'player2';
+type AppScreen = 'landing' | 'group-setup' | 'game' | 'results';
+
+const CLAUDE_CODE_SERVER_URL = 'ws://localhost:3001';
 
 interface PlayerState {
   name: string;
@@ -14,6 +18,7 @@ interface PlayerState {
   score: number;
   isReady: boolean;
   promptsUsed: number;
+  hasEnded: boolean;
 }
 
 interface Message {
@@ -24,13 +29,15 @@ interface Message {
 }
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('landing');
+  const [selectedChallenge, setSelectedChallenge] = useState<1 | 2>(1);
   const [player1, setPlayer1] = useState<PlayerState>({
     name: 'Player 1',
     prompt: '',
     score: 0,
     isReady: false,
     promptsUsed: 0,
+    hasEnded: false,
   });
 
   const [player2, setPlayer2] = useState<PlayerState>({
@@ -39,39 +46,210 @@ export default function App() {
     score: 0,
     isReady: false,
     promptsUsed: 0,
+    hasEnded: false,
   });
 
   const [currentTurn, setCurrentTurn] = useState<Player>('player1');
-  const [round, setRound] = useState(1);
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(20 * 60); // 20 minutes in seconds
   const [isActive, setIsActive] = useState(false);
-  const [showResults, setShowResults] = useState(false);
   const [winner, setWinner] = useState<Player | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [player1Console, setPlayer1Console] = useState<string[]>([]);
   const [player2Console, setPlayer2Console] = useState<string[]>([]);
+  const [player1Connected, setPlayer1Connected] = useState(false);
+  const [player2Connected, setPlayer2Connected] = useState(false);
+  const [evaluationResults, setEvaluationResults] = useState<any>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [player1Processing, setPlayer1Processing] = useState(false);
+  const [player2Processing, setPlayer2Processing] = useState(false);
 
-  const handleLogin = (username: string) => {
-    setPlayer1((prev) => ({ ...prev, name: username }));
-    setIsLoggedIn(true);
+  // WebSocket refs for both players
+  const player1WsRef = useRef<WebSocket | null>(null);
+  const player2WsRef = useRef<WebSocket | null>(null);
+
+  // Ref to hold the evaluation function (so it's accessible in WebSocket callbacks)
+  const evaluatePlayerScoreRef = useRef<(playerNum: 1 | 2, playerName: string, challenge: number) => void>(() => {});
+
+  // Connect player to Claude Code Server
+  const connectPlayer = useCallback((playerNum: 1 | 2, playerName: string, challenge: number) => {
+    const wsRef = playerNum === 1 ? player1WsRef : player2WsRef;
+    const setConnected = playerNum === 1 ? setPlayer1Connected : setPlayer2Connected;
+    const setConsole = playerNum === 1 ? setPlayer1Console : setPlayer2Console;
+    const setProcessing = playerNum === 1 ? setPlayer1Processing : setPlayer2Processing;
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log(`Player ${playerNum} already connected`);
+      return;
+    }
+
+    try {
+      const ws = new WebSocket(CLAUDE_CODE_SERVER_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log(`Player ${playerNum} (${playerName}) WebSocket connected`);
+        setConnected(true);
+        setConsole(prev => [...prev, `[System] Connected to Claude Code Server`]);
+
+        // Start session with player info
+        ws.send(JSON.stringify({
+          type: 'start-session',
+          playerName,
+          challenge,
+          cols: 120,
+          rows: 30,
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'output') {
+            // Parse ANSI and add to console
+            setConsole(prev => [...prev, msg.data]);
+          } else if (msg.type === 'session-started') {
+            setConsole(prev => [...prev, `[System] Session started in workspace: ${msg.workspace}`]);
+          } else if (msg.type === 'processing-started') {
+            // Server confirmed processing started
+            console.log(`Player ${playerNum} processing started`);
+            setProcessing(true);
+          } else if (msg.type === 'processing-complete') {
+            // Server confirmed Claude command completed
+            console.log(`Player ${playerNum} processing complete`);
+            setProcessing(false);
+            setConsole(prev => [...prev, `[System] Claude finished processing`]);
+
+            // Evaluate the player's workspace and update score
+            if (msg.playerName && msg.challenge) {
+              evaluatePlayerScoreRef.current(playerNum, msg.playerName, msg.challenge);
+            }
+          } else if (msg.type === 'exit') {
+            setConsole(prev => [...prev, `[System] Session exited with code: ${msg.exitCode}`]);
+            setProcessing(false);
+          } else if (msg.type === 'error') {
+            setConsole(prev => [...prev, `[Error] ${msg.message}`]);
+            setProcessing(false);
+          }
+        } catch (e) {
+          console.error('Error parsing message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log(`Player ${playerNum} WebSocket disconnected`);
+        setConnected(false);
+        setConsole(prev => [...prev, `[System] Disconnected from server`]);
+        wsRef.current = null;
+      };
+
+      ws.onerror = (error) => {
+        console.error(`Player ${playerNum} WebSocket error:`, error);
+        setConsole(prev => [...prev, `[Error] Connection failed`]);
+      };
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      setConsole(prev => [...prev, `[Error] Failed to connect to server`]);
+    }
+  }, []);
+
+  // Disconnect player from Claude Code Server
+  const disconnectPlayer = useCallback((playerNum: 1 | 2) => {
+    const wsRef = playerNum === 1 ? player1WsRef : player2WsRef;
+    const setConnected = playerNum === 1 ? setPlayer1Connected : setPlayer2Connected;
+
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'kill-session' }));
+      }
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setConnected(false);
+  }, []);
+
+  // Send input to player's Claude Code session
+  const sendPlayerInput = useCallback((playerNum: 1 | 2, input: string) => {
+    const wsRef = playerNum === 1 ? player1WsRef : player2WsRef;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'input', data: input }));
+    }
+  }, []);
+
+  // Evaluate a single player's workspace and update their score
+  const evaluatePlayerScore = useCallback(async (playerNum: 1 | 2, playerName: string, challenge: number) => {
+    try {
+      const response = await fetch('http://localhost:3000/evaluate-player', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName, challenge }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update the player's score
+        if (playerNum === 1) {
+          setPlayer1((prev) => ({ ...prev, score: result.totalScore }));
+        } else {
+          setPlayer2((prev) => ({ ...prev, score: result.totalScore }));
+        }
+
+        // Add score update to console
+        const setConsole = playerNum === 1 ? setPlayer1Console : setPlayer2Console;
+        setConsole(prev => [...prev, `[Score] ${playerName}: ${result.totalScore}/${result.maxScore} (${result.percentage}%) - Grade: ${result.grade}`]);
+      }
+    } catch (error) {
+      console.error('Failed to evaluate player:', error);
+    }
+  }, []);
+
+  // Keep the ref updated with the latest function
+  useEffect(() => {
+    evaluatePlayerScoreRef.current = evaluatePlayerScore;
+  }, [evaluatePlayerScore]);
+
+  const handleChallengeSelect = (challenge: 1 | 2) => {
+    setSelectedChallenge(challenge);
+    setCurrentScreen('group-setup');
+  };
+
+  const handleGroupSetup = (p1Name: string, p2Name: string) => {
+    setPlayer1((prev) => ({ ...prev, name: p1Name }));
+    setPlayer2((prev) => ({ ...prev, name: p2Name }));
+    setCurrentScreen('game');
+
+    // Connect both players to Claude Code Server
+    setTimeout(() => {
+      connectPlayer(1, p1Name, selectedChallenge);
+      connectPlayer(2, p2Name, selectedChallenge);
+    }, 100);
+  };
+
+  const handleBackToLanding = () => {
+    setCurrentScreen('landing');
   };
 
   const startDuel = () => {
     setIsActive(true);
-    setTimeLeft(60);
+    setTimeLeft(20 * 60); // 20 minutes
     setPlayer1({ ...player1, isReady: false, prompt: '' });
     setPlayer2({ ...player2, isReady: false, prompt: '' });
-    setShowResults(false);
     addMessage(
       'Judge Alpha',
-      `Round ${round} begins! Let's see what creative prompts we get!`,
+      `Challenge ${selectedChallenge} begins! You have 20 minutes. Good luck!`,
       'judge',
     );
   };
 
   const handleTimeUp = () => {
     setIsActive(false);
-    evaluateRound();
+    addMessage('Judge Alpha', 'Time is up! The challenge has ended.', 'judge');
+    // Determine winner based on prompts used (more engagement = more points)
+    const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
+                        player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
+    setWinner(finalWinner);
+    setCurrentScreen('results');
   };
 
   const handlePromptChange = (player: Player, prompt: string) => {
@@ -83,100 +261,130 @@ export default function App() {
   };
 
   const handleSubmit = (player: Player) => {
-    if (player === 'player1' && player1.prompt.trim() && player1.promptsUsed < 7) {
-      setPlayer1({ ...player1, isReady: true, promptsUsed: player1.promptsUsed + 1 });
-      addMessage(player1.name, 'Prompt submitted!', 'player1');
-      addMessage('Judge Beta', `${player1.name} has submitted their prompt!`, 'judge');
-      addConsoleLog('player1', `✓ Prompt submitted: "${player1.prompt.substring(0, 50)}..."`);
-      addConsoleLog('player1', `→ Processing prompt for evaluation`);
-      // Switch to player 2's turn
-      setCurrentTurn('player2');
-    } else if (player === 'player2' && player2.prompt.trim() && player2.promptsUsed < 7) {
-      setPlayer2({ ...player2, isReady: true, promptsUsed: player2.promptsUsed + 1 });
-      addMessage(player2.name, 'Prompt submitted!', 'player2');
-      addMessage('Judge Gamma', `${player2.name} has submitted their prompt!`, 'judge');
-      addConsoleLog('player2', `✓ Prompt submitted: "${player2.prompt.substring(0, 50)}..."`);
-      addConsoleLog('player2', `→ Processing prompt for evaluation`);
-      // Switch to player 1's turn
-      setCurrentTurn('player1');
-    }
+    if (player === 'player1' && player1.prompt.trim()) {
+      const prompt = player1.prompt.trim();
+      setPlayer1({ ...player1, promptsUsed: player1.promptsUsed + 1, prompt: '' });
+      // Show the actual prompt in chat
+      addMessage(player1.name, `Prompt #${player1.promptsUsed + 1}: "${prompt}"`, 'player1');
 
-    // Check if both players are ready
-    const bothReady =
-      (player === 'player1' ? true : player1.isReady) &&
-      (player === 'player2' ? true : player2.isReady);
+      // Set processing state immediately for responsive UI (server will confirm)
+      setPlayer1Processing(true);
+      sendPlayerInput(1, prompt + '\n');
 
-    if (bothReady) {
-      setIsActive(false);
-      setTimeout(() => {
-        addMessage('Judge Alpha', 'Both prompts are in! Time to evaluate...', 'judge');
-      }, 500);
-      evaluateRound();
-    }
-  };
+      // Safety timeout - clear processing after 2 minutes max (Claude might take a while)
+      setTimeout(() => setPlayer1Processing(false), 120000);
 
-  const evaluateRound = () => {
-    // Simple evaluation based on prompt length and complexity
-    const score1 = calculateScore(player1.prompt);
-    const score2 = calculateScore(player2.prompt);
-
-    setPlayer1({ ...player1, score: player1.score + score1 });
-    setPlayer2({ ...player2, score: player2.score + score2 });
-
-    // Add judge commentary about scores
-    setTimeout(() => {
-      if (score1 > score2) {
-        addMessage(
-          'Judge Beta',
-          `Impressive! ${player1.name} takes this round with ${score1} points!`,
-          'judge',
-        );
-      } else if (score2 > score1) {
-        addMessage(
-          'Judge Gamma',
-          `Excellent work! ${player2.name} scores ${score2} points this round!`,
-          'judge',
-        );
+      // Switch to player 2's turn (reset player2's isReady for their turn)
+      // If player2 has ended, skip to check if game should end
+      if (player2.hasEnded) {
+        // Player 2 already ended, player 1 continues
       } else {
-        addMessage(
-          'Judge Alpha',
-          `It's a tie this round! Both players scored ${score1} points!`,
-          'judge',
-        );
+        setPlayer2((prev) => ({ ...prev, isReady: false }));
+        setCurrentTurn('player2');
       }
-    }, 1000);
+    } else if (player === 'player2' && player2.prompt.trim()) {
+      const prompt = player2.prompt.trim();
+      setPlayer2({ ...player2, promptsUsed: player2.promptsUsed + 1, prompt: '' });
+      // Show the actual prompt in chat
+      addMessage(player2.name, `Prompt #${player2.promptsUsed + 1}: "${prompt}"`, 'player2');
 
-    if (round >= 3) {
-      // Determine final winner
-      const finalWinner = player1.score + score1 > player2.score + score2 ? 'player1' : 'player2';
-      setWinner(finalWinner);
-      setTimeout(() => {
-        addMessage('Judge Alpha', 'What an incredible duel! We have our winner!', 'judge');
-      }, 1500);
-      setShowResults(true);
-    } else {
-      // Move to next round
-      setTimeout(() => {
-        setRound(round + 1);
-        setTimeLeft(60);
-        setIsActive(true);
-        setPlayer1({ ...player1, prompt: '', isReady: false });
-        setPlayer2({ ...player2, prompt: '', isReady: false });
-        setCurrentTurn(currentTurn === 'player1' ? 'player2' : 'player1');
-        addMessage(
-          'Judge Gamma',
-          `Round ${round + 1} is starting! The competition heats up!`,
-          'judge',
-        );
-      }, 2000);
+      // Set processing state immediately for responsive UI (server will confirm)
+      setPlayer2Processing(true);
+      sendPlayerInput(2, prompt + '\n');
+
+      // Safety timeout - clear processing after 2 minutes max (Claude might take a while)
+      setTimeout(() => setPlayer2Processing(false), 120000);
+
+      // Switch to player 1's turn (reset player1's isReady for their turn)
+      // If player1 has ended, skip to check if game should end
+      if (player1.hasEnded) {
+        // Player 1 already ended, player 2 continues
+      } else {
+        setPlayer1((prev) => ({ ...prev, isReady: false }));
+        setCurrentTurn('player1');
+      }
     }
   };
 
-  const calculateScore = (prompt: string): number => {
-    const baseScore = Math.min(prompt.length, 200);
-    const wordCount = prompt.trim().split(/\s+/).length;
-    const creativityBonus = wordCount > 10 ? 50 : 0;
-    return Math.floor((baseScore + creativityBonus) / 5);
+  const handleEndPrompts = (player: Player) => {
+    if (player === 'player1') {
+      setPlayer1((prev) => ({ ...prev, hasEnded: true }));
+      addMessage(player1.name, 'Has ended their prompts early!', 'player1');
+
+      // If it was player1's turn, switch to player2
+      if (currentTurn === 'player1' && !player2.hasEnded) {
+        setCurrentTurn('player2');
+      }
+
+      // Check if both players have ended
+      if (player2.hasEnded) {
+        handleBothEnded();
+      }
+    } else {
+      setPlayer2((prev) => ({ ...prev, hasEnded: true }));
+      addMessage(player2.name, 'Has ended their prompts early!', 'player2');
+
+      // If it was player2's turn, switch to player1
+      if (currentTurn === 'player2' && !player1.hasEnded) {
+        setCurrentTurn('player1');
+      }
+
+      // Check if both players have ended
+      if (player1.hasEnded) {
+        handleBothEnded();
+      }
+    }
+  };
+
+  const handleBothEnded = async () => {
+    setIsActive(false);
+    addMessage('Judge Alpha', 'Both players have ended! Evaluating workspaces...', 'judge');
+    await runEvaluation();
+  };
+
+  const handleEndDuel = async () => {
+    setIsActive(false);
+    addMessage('Judge Alpha', 'Duel ended! Evaluating both workspaces...', 'judge');
+    await runEvaluation();
+  };
+
+  const runEvaluation = async () => {
+    setIsEvaluating(true);
+    try {
+      const response = await fetch('http://localhost:3000/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player1Name: player1.name,
+          player2Name: player2.name,
+          challenge: selectedChallenge,
+        }),
+      });
+
+      const results = await response.json();
+
+      if (results.success) {
+        setEvaluationResults(results);
+        // Update scores based on evaluation
+        setPlayer1((prev) => ({ ...prev, score: results.player1.totalScore }));
+        setPlayer2((prev) => ({ ...prev, score: results.player2.totalScore }));
+        setWinner(results.winner);
+        addMessage('Judge Alpha', `Evaluation complete! ${results.winner === 'player1' ? player1.name : results.winner === 'player2' ? player2.name : 'It\'s a tie'}!`, 'judge');
+      } else {
+        addMessage('Judge Alpha', 'Evaluation failed. Please check the workspaces.', 'judge');
+        const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
+                            player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
+        setWinner(finalWinner);
+      }
+    } catch (error) {
+      console.error('Evaluation error:', error);
+      addMessage('Judge Alpha', 'Could not connect to evaluation server.', 'judge');
+      const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
+                          player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
+      setWinner(finalWinner);
+    }
+    setIsEvaluating(false);
+    setCurrentScreen('results');
   };
 
   const addMessage = (sender: string, text: string, type: 'player1' | 'player2' | 'judge') => {
@@ -198,17 +406,26 @@ export default function App() {
   };
 
   const resetGame = () => {
-    setPlayer1({ name: 'Player 1', prompt: '', score: 0, isReady: false, promptsUsed: 0 });
-    setPlayer2({ name: 'Player 2', prompt: '', score: 0, isReady: false, promptsUsed: 0 });
-    setRound(1);
-    setTimeLeft(60);
+    // Disconnect both players from Claude Code Server
+    disconnectPlayer(1);
+    disconnectPlayer(2);
+
+    setPlayer1({ name: 'Player 1', prompt: '', score: 0, isReady: false, promptsUsed: 0, hasEnded: false });
+    setPlayer2({ name: 'Player 2', prompt: '', score: 0, isReady: false, promptsUsed: 0, hasEnded: false });
+    setTimeLeft(20 * 60); // 20 minutes
     setIsActive(false);
-    setShowResults(false);
+    setEvaluationResults(null);
+    setIsEvaluating(false);
+    setCurrentScreen('landing');
     setWinner(null);
     setCurrentTurn('player1');
     setChatMessages([]);
     setPlayer1Console([]);
     setPlayer2Console([]);
+    setPlayer1Connected(false);
+    setPlayer2Connected(false);
+    setPlayer1Processing(false);
+    setPlayer2Processing(false);
   };
 
   // Timer countdown
@@ -225,13 +442,38 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, timeLeft]);
 
-  if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} />;
+  // Cleanup WebSocket connections on unmount
+  useEffect(() => {
+    return () => {
+      disconnectPlayer(1);
+      disconnectPlayer(2);
+    };
+  }, [disconnectPlayer]);
+
+  if (currentScreen === 'landing') {
+    return <LandingPage onSelectChallenge={handleChallengeSelect} />;
   }
 
-  if (showResults) {
+  if (currentScreen === 'group-setup') {
     return (
-      <DuelResults player1={player1} player2={player2} winner={winner} onPlayAgain={resetGame} />
+      <GroupSetup
+        challenge={selectedChallenge}
+        onSetupComplete={handleGroupSetup}
+        onBack={handleBackToLanding}
+      />
+    );
+  }
+
+  if (currentScreen === 'results') {
+    return (
+      <DuelResults
+        player1={player1}
+        player2={player2}
+        winner={winner}
+        onPlayAgain={resetGame}
+        evaluationResults={evaluationResults}
+        challenge={selectedChallenge}
+      />
     );
   }
 
@@ -245,18 +487,25 @@ export default function App() {
           <div className="flex items-center justify-between flex-wrap gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-4">
               <i className="nes-icon trophy is-medium sm:is-large"></i>
-              <h1 style={{ fontSize: 'clamp(0.8rem, 4vw, 1.5rem)', lineHeight: '1.8rem' }}>
-                Prompt Duel
-              </h1>
+              <div>
+                <h1 style={{ fontSize: 'clamp(0.8rem, 4vw, 1.5rem)', lineHeight: '1.8rem' }}>
+                  Prompt Duel
+                </h1>
+                <p style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)', color: '#92cc41' }}>
+                  Challenge {selectedChallenge}
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-6 flex-wrap">
-              <div className="nes-badge">
-                <span className="is-warning" style={{ fontSize: 'clamp(0.5rem, 2vw, 0.8rem)' }}>
-                  Round {round}/3
-                </span>
-              </div>
               <Timer timeLeft={timeLeft} isActive={isActive} />
+              {player1Connected && player2Connected && (
+                <div className="nes-badge">
+                  <span className="is-success" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
+                    CONNECTED
+                  </span>
+                </div>
+              )}
             </div>
 
             <button
@@ -273,7 +522,7 @@ export default function App() {
 
       {/* Main Battle Area */}
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {!isActive && round === 1 && (
+        {!isActive && timeLeft === 20 * 60 && (
           <div className="text-center mb-4 sm:mb-8">
             <button
               onClick={startDuel}
@@ -286,6 +535,27 @@ export default function App() {
           </div>
         )}
 
+        {/* End Duel Button - shows when duel is active */}
+        {isActive && (
+          <div className="text-center mb-4 sm:mb-8">
+            <button
+              onClick={handleEndDuel}
+              disabled={isEvaluating || player1Processing || player2Processing}
+              className="nes-btn is-error"
+              type="button"
+              style={{
+                fontSize: 'clamp(0.7rem, 2.5vw, 0.9rem)',
+                padding: '0.6rem 1.2rem',
+                opacity: (player1Processing || player2Processing) ? 0.5 : 1,
+              }}
+            >
+              {isEvaluating ? 'Evaluating...' :
+               (player1Processing || player2Processing) ? 'Claude is working...' :
+               'End Duel & Evaluate'}
+            </button>
+          </div>
+        )}
+
         {/* Unified Prompt Area */}
         <UnifiedPromptArea
           player1={player1}
@@ -294,6 +564,9 @@ export default function App() {
           isActive={isActive}
           onPromptChange={handlePromptChange}
           onSubmit={handleSubmit}
+          onEndPrompts={handleEndPrompts}
+          player1Processing={player1Processing}
+          player2Processing={player2Processing}
         />
 
         {/* Combined Chat */}
@@ -308,6 +581,7 @@ export default function App() {
             player2={player2}
             player1Console={player1Console}
             player2Console={player2Console}
+            challenge={selectedChallenge}
           />
         </div>
 

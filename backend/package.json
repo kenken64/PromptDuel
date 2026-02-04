@@ -8,12 +8,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
+    "db:setup": "bun src/db/setup.ts",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "lint:fix": "eslint 'src/**/*.{ts,tsx}' --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx,json,md}'"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
     "drizzle-orm": "^0.36.4",
     "elysia": "^1.1.29"
   },
@@ -21,7 +23,6 @@
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^8.48.1",
     "@typescript-eslint/parser": "^8.48.1",
-    "better-sqlite3": "^11.8.1",
     "drizzle-kit": "^0.29.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^10.1.8",

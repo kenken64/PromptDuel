@@ -15,6 +15,10 @@ echo "========================================="
 echo ""
 bash "$SCRIPT_DIR/stop-frontend.sh"
 
+# Stop Claude Code Server
+echo ""
+bash "$SCRIPT_DIR/stop-claude-code-server.sh"
+
 # Stop backend
 echo ""
 bash "$SCRIPT_DIR/stop-backend.sh"

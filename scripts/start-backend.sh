@@ -32,10 +32,10 @@ if [ ! -d "node_modules" ]; then
     bun install
 fi
 
-# Check if database exists, if not, push schema
+# Check if database exists, if not, set up schema
 if [ ! -f "sqlite.db" ]; then
     echo "Setting up database..."
-    bun run db:push
+    bun run db:setup
 fi
 
 # Start the backend in the background

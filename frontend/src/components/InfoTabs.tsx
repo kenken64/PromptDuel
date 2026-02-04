@@ -1,4 +1,13 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+
+// Strip ANSI escape codes from terminal output
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\].*?(?:\x07|\x1B\\))/g, '')
+            .replace(/\[[\d;]*[A-Za-z]/g, '')  // Additional CSI sequences
+            .replace(/\]\d+;[^\x07]*\x07/g, '') // OSC sequences
+            .replace(/[\x00-\x09\x0B-\x1F]/g, ''); // Control characters except newline
+}
 
 interface PlayerState {
   name: string;
@@ -6,6 +15,7 @@ interface PlayerState {
   score: number;
   isReady: boolean;
   promptsUsed: number;
+  hasEnded: boolean;
 }
 
 interface InfoTabsProps {
@@ -13,10 +23,37 @@ interface InfoTabsProps {
   player2: PlayerState;
   player1Console: string[];
   player2Console: string[];
+  challenge: 1 | 2;
 }
 
-export function InfoTabs({ player1, player2, player1Console, player2Console }: InfoTabsProps) {
+const CHALLENGE_VIDEOS = {
+  1: 'https://www.youtube.com/embed/dEV5yZeD4bA',
+  2: 'https://www.youtube.com/embed/N4PRqcKdj-8',
+};
+
+const CHALLENGE_DESCRIPTIONS = {
+  1: {
+    title: 'Challenge 1 - Beginner',
+    description: 'Watch the video above for challenge requirements. Build a Node.js CLI application based on the specifications provided.',
+  },
+  2: {
+    title: 'Challenge 2 - Advanced',
+    description: 'Watch the video above for challenge requirements. Build a Node.js terminal application based on the specifications provided.',
+  },
+};
+
+export function InfoTabs({ player1, player2, player1Console, player2Console, challenge }: InfoTabsProps) {
   const [activeTab, setActiveTab] = useState<'video' | 'console' | 'evaluation'>('video');
+
+  // Clean ANSI codes from console output and filter empty lines
+  const cleanPlayer1Console = useMemo(
+    () => player1Console.map(stripAnsi).filter(line => line.trim().length > 0),
+    [player1Console]
+  );
+  const cleanPlayer2Console = useMemo(
+    () => player2Console.map(stripAnsi).filter(line => line.trim().length > 0),
+    [player2Console]
+  );
 
   return (
     <div className="nes-container is-dark with-title">
@@ -89,8 +126,8 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
                     height: '100%',
                     border: 'none',
                   }}
-                  src="https://www.youtube.com/embed/zEqMF7u_XrI"
-                  title="Challenge Requirements Video"
+                  src={CHALLENGE_VIDEOS[challenge]}
+                  title={`Challenge ${challenge} Requirements Video`}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />
@@ -100,11 +137,8 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
               className="nes-container"
               style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', lineHeight: '1.4' }}
             >
-              <h4 style={{ marginBottom: '0.5rem' }}>Challenge Description:</h4>
-              <p>
-                Create the most creative and detailed prompt for building an app or game. Points are
-                awarded based on creativity, detail, and technical feasibility.
-              </p>
+              <h4 style={{ marginBottom: '0.5rem' }}>{CHALLENGE_DESCRIPTIONS[challenge].title}</h4>
+              <p>{CHALLENGE_DESCRIPTIONS[challenge].description}</p>
             </div>
           </div>
         ) : activeTab === 'console' ? (
@@ -136,10 +170,10 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
                   wordBreak: 'break-word',
                 }}
               >
-                {player1Console.length === 0 ? (
+                {cleanPlayer1Console.length === 0 ? (
                   <div style={{ color: '#666', fontStyle: 'italic' }}>No output yet...</div>
                 ) : (
-                  player1Console.map((log, index) => (
+                  cleanPlayer1Console.map((log, index) => (
                     <div key={index} style={{ marginBottom: '0.3rem', lineHeight: '1.2' }}>
                       {log}
                     </div>
@@ -175,10 +209,10 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
                   wordBreak: 'break-word',
                 }}
               >
-                {player2Console.length === 0 ? (
+                {cleanPlayer2Console.length === 0 ? (
                   <div style={{ color: '#666', fontStyle: 'italic' }}>No output yet...</div>
                 ) : (
-                  player2Console.map((log, index) => (
+                  cleanPlayer2Console.map((log, index) => (
                     <div key={index} style={{ marginBottom: '0.3rem', lineHeight: '1.2' }}>
                       {log}
                     </div>
@@ -204,34 +238,28 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
                 <span>Scoring Criteria</span>
               </h4>
               <div style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', lineHeight: '1.6' }}>
-                <div className="mb-3">
-                  <strong style={{ color: '#f7d51d' }}>Creativity (30%)</strong>
-                  <p style={{ opacity: 0.8, marginTop: '0.3rem' }}>
-                    Originality and innovative thinking in the prompt concept
+                <div className="mb-2">
+                  <strong style={{ color: '#f7d51d' }}>Functionality (40%)</strong>
+                  <p style={{ opacity: 0.8, marginTop: '0.2rem' }}>
+                    Working implementation that meets requirements
                   </p>
                 </div>
-                <div className="mb-3">
-                  <strong style={{ color: '#209cee' }}>Detail Level (25%)</strong>
-                  <p style={{ opacity: 0.8, marginTop: '0.3rem' }}>
-                    Depth and specificity of requirements and features
+                <div className="mb-2">
+                  <strong style={{ color: '#209cee' }}>Algorithm & Logic (25%)</strong>
+                  <p style={{ opacity: 0.8, marginTop: '0.2rem' }}>
+                    Correct approach and efficient solution
                   </p>
                 </div>
-                <div className="mb-3">
-                  <strong style={{ color: '#92cc41' }}>Technical Feasibility (20%)</strong>
-                  <p style={{ opacity: 0.8, marginTop: '0.3rem' }}>
-                    Practical implementation and realistic scope
-                  </p>
-                </div>
-                <div className="mb-3">
-                  <strong style={{ color: '#e76e55' }}>Clarity (15%)</strong>
-                  <p style={{ opacity: 0.8, marginTop: '0.3rem' }}>
-                    Clear communication and well-structured descriptions
+                <div className="mb-2">
+                  <strong style={{ color: '#92cc41' }}>Code Quality (20%)</strong>
+                  <p style={{ opacity: 0.8, marginTop: '0.2rem' }}>
+                    Clean, readable, well-structured code
                   </p>
                 </div>
                 <div>
-                  <strong style={{ color: '#b565d8' }}>Word Count (10%)</strong>
-                  <p style={{ opacity: 0.8, marginTop: '0.3rem' }}>
-                    Length bonus for comprehensive prompts
+                  <strong style={{ color: '#e76e55' }}>Completeness (15%)</strong>
+                  <p style={{ opacity: 0.8, marginTop: '0.2rem' }}>
+                    All features implemented with error handling
                   </p>
                 </div>
               </div>
@@ -254,12 +282,12 @@ export function InfoTabs({ player1, player2, player1Console, player2Console }: I
               <div style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', lineHeight: '1.6' }}>
                 <ul style={{ paddingLeft: '1rem', margin: 0 }}>
                   <li style={{ marginBottom: '0.5rem' }}>
-                    Be specific about features and functionality
+                    Watch the video carefully for all requirements
                   </li>
-                  <li style={{ marginBottom: '0.5rem' }}>Include user experience considerations</li>
-                  <li style={{ marginBottom: '0.5rem' }}>Describe the target audience clearly</li>
+                  <li style={{ marginBottom: '0.5rem' }}>Break down the problem into smaller steps</li>
+                  <li style={{ marginBottom: '0.5rem' }}>Test your code as you build</li>
                   <li style={{ marginBottom: '0.5rem' }}>
-                    Mention technology stack or design style
+                    Use clear prompts to guide Claude Code
                   </li>
                   <li>Think about edge cases and error handling</li>
                 </ul>

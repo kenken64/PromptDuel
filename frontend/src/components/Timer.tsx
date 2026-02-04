@@ -7,7 +7,7 @@ export function Timer({ timeLeft, isActive }: TimerProps) {
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
-  const isUrgent = timeLeft <= 10 && isActive;
+  const isUrgent = timeLeft <= 60 && isActive; // Urgent when less than 1 minute
 
   return (
     <div
