@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Leaderboard } from './Leaderboard';
+import { getFinalScore, getMultiplier } from '../gameRules';
 
 type Player = 'player1' | 'player2';
 
@@ -74,43 +75,63 @@ export function DuelResults({
 
   // Save scores to leaderboard when results are shown
   useEffect(() => {
-    if (hasEvaluation && !scoresSaved) {
+    if (!scoresSaved) {
       saveToLeaderboard();
     }
-  }, [hasEvaluation, scoresSaved]);
+  }, [scoresSaved]);
 
   const saveToLeaderboard = async () => {
-    if (!evaluationResults) return;
-
     try {
-      // Save player 1's score
+      const p1Data = hasEvaluation && evaluationResults
+        ? {
+            playerName: player1.name,
+            challenge,
+            score: evaluationResults.player1.totalScore,
+            maxScore: evaluationResults.player1.maxScore,
+            percentage: evaluationResults.player1.percentage,
+            grade: evaluationResults.player1.grade,
+            promptsUsed: player1.promptsUsed,
+          }
+        : {
+            playerName: player1.name,
+            challenge,
+            score: player1.score,
+            maxScore: 100,
+            percentage: player1.score,
+            grade: player1.score >= 90 ? 'A' : player1.score >= 80 ? 'B' : player1.score >= 70 ? 'C' : player1.score >= 60 ? 'D' : 'F',
+            promptsUsed: player1.promptsUsed,
+          };
+
+      const p2Data = hasEvaluation && evaluationResults
+        ? {
+            playerName: player2.name,
+            challenge,
+            score: evaluationResults.player2.totalScore,
+            maxScore: evaluationResults.player2.maxScore,
+            percentage: evaluationResults.player2.percentage,
+            grade: evaluationResults.player2.grade,
+            promptsUsed: player2.promptsUsed,
+          }
+        : {
+            playerName: player2.name,
+            challenge,
+            score: player2.score,
+            maxScore: 100,
+            percentage: player2.score,
+            grade: player2.score >= 90 ? 'A' : player2.score >= 80 ? 'B' : player2.score >= 70 ? 'C' : player2.score >= 60 ? 'D' : 'F',
+            promptsUsed: player2.promptsUsed,
+          };
+
       await fetch('http://localhost:3000/leaderboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerName: player1.name,
-          challenge,
-          score: evaluationResults.player1.totalScore,
-          maxScore: evaluationResults.player1.maxScore,
-          percentage: evaluationResults.player1.percentage,
-          grade: evaluationResults.player1.grade,
-          promptsUsed: player1.promptsUsed,
-        }),
+        body: JSON.stringify(p1Data),
       });
 
-      // Save player 2's score
       await fetch('http://localhost:3000/leaderboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerName: player2.name,
-          challenge,
-          score: evaluationResults.player2.totalScore,
-          maxScore: evaluationResults.player2.maxScore,
-          percentage: evaluationResults.player2.percentage,
-          grade: evaluationResults.player2.grade,
-          promptsUsed: player2.promptsUsed,
-        }),
+        body: JSON.stringify(p2Data),
       });
 
       setScoresSaved(true);
@@ -197,10 +218,13 @@ export function DuelResults({
                     {evaluationResults.player1.grade}
                   </p>
                   <p style={{ fontSize: 'clamp(0.8rem, 3vw, 1.2rem)' }}>
-                    {evaluationResults.player1.totalScore}/{evaluationResults.player1.maxScore}
+                    {getFinalScore(evaluationResults.player1.totalScore, player1.promptsUsed)}/{evaluationResults.player1.maxScore}
+                  </p>
+                  <p style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#f7d51d', marginTop: '0.3rem' }}>
+                    {evaluationResults.player1.totalScore} × {getMultiplier(player1.promptsUsed)} ({player1.promptsUsed} prompts)
                   </p>
                   <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', opacity: 0.7 }}>
-                    {evaluationResults.player1.percentage}%
+                    {evaluationResults.player1.percentage}% raw
                   </p>
                 </div>
 
@@ -227,10 +251,13 @@ export function DuelResults({
                     {evaluationResults.player2.grade}
                   </p>
                   <p style={{ fontSize: 'clamp(0.8rem, 3vw, 1.2rem)' }}>
-                    {evaluationResults.player2.totalScore}/{evaluationResults.player2.maxScore}
+                    {getFinalScore(evaluationResults.player2.totalScore, player2.promptsUsed)}/{evaluationResults.player2.maxScore}
+                  </p>
+                  <p style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#f7d51d', marginTop: '0.3rem' }}>
+                    {evaluationResults.player2.totalScore} × {getMultiplier(player2.promptsUsed)} ({player2.promptsUsed} prompts)
                   </p>
                   <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', opacity: 0.7 }}>
-                    {evaluationResults.player2.percentage}%
+                    {evaluationResults.player2.percentage}% raw
                   </p>
                 </div>
               </div>

@@ -1,7 +1,10 @@
 import { readFileSync, existsSync, readdirSync, writeFileSync } from 'fs';
 import { resolve, join } from 'path';
 
-const WORKSPACES_DIR = resolve(__dirname, '../../workspaces');
+// Override with WORKSPACES_DIR env var
+const WORKSPACES_DIR = process.env.WORKSPACES_DIR
+  ? resolve(process.env.WORKSPACES_DIR)
+  : resolve(__dirname, '../../workspaces');
 
 // Evaluation criteria for Challenge 1: BracketValidator
 const CHALLENGE_1_CRITERIA = {

@@ -11,8 +11,10 @@ const __dirname = dirname(__filename);
 const PORT = 3001;
 const sessions = new Map();
 
-// Base directory for player workspaces
-const WORKSPACES_DIR = resolve(__dirname, '../workspaces');
+// Base directory for player workspaces (override with WORKSPACES_DIR env var)
+const WORKSPACES_DIR = process.env.WORKSPACES_DIR
+  ? resolve(process.env.WORKSPACES_DIR)
+  : resolve(__dirname, '../workspaces');
 
 // Ensure workspaces directory exists
 if (!existsSync(WORKSPACES_DIR)) {
@@ -47,7 +49,26 @@ const getWindowsShell = () => {
   return 'bash';
 };
 
-const shell = isWindows ? getWindowsShell() : '/bin/zsh';
+// Get Unix shell - prefer user's shell, fallback to bash
+const getUnixShell = () => {
+  // Try user's default shell first
+  const userShell = process.env.SHELL;
+  if (userShell && existsSync(userShell)) {
+    console.log(`Using user's shell: ${userShell}`);
+    return userShell;
+  }
+  // Fallback options
+  const fallbacks = ['/bin/bash', '/bin/zsh', '/bin/sh'];
+  for (const sh of fallbacks) {
+    if (existsSync(sh)) {
+      console.log(`Using fallback shell: ${sh}`);
+      return sh;
+    }
+  }
+  return '/bin/sh';
+};
+
+const shell = isWindows ? getWindowsShell() : getUnixShell();
 // Spawn interactive shell first, then send claude command after
 const shellArgs = isWindows
   ? ['--login', '-i']
@@ -58,6 +79,12 @@ const wss = new WebSocketServer({ port: PORT });
 console.log(`Claude Code Terminal Server listening on ws://localhost:${PORT}`);
 console.log(`Workspaces directory: ${WORKSPACES_DIR}`);
 console.log(`Platform: ${os.platform()}, Shell: ${shell}`);
+
+if (process.env.ANTHROPIC_API_KEY) {
+  console.log(`Auth: ANTHROPIC_API_KEY is set (${process.env.ANTHROPIC_API_KEY.substring(0, 10)}...)`);
+} else {
+  console.warn('Warning: ANTHROPIC_API_KEY is not set. Claude Code will require interactive login.');
+}
 
 // Helper to sanitize player name for directory
 function sanitizeName(name) {

@@ -75,14 +75,11 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
   };
 
   return (
-    <div className="nes-container is-dark with-title">
-      <p className="title" style={{ fontSize: 'clamp(0.7rem, 3vw, 1rem)' }}>
-        Leaderboard
-      </p>
-
-      {/* Filter Buttons */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+    <div>
+      {/* Filter Buttons - outside NES container to avoid title overlap blocking clicks */}
+      <div className="flex gap-2 mb-4 flex-wrap" style={{ position: 'relative', zIndex: 2 }}>
         <button
+          type="button"
           onClick={() => setFilter('all')}
           className={`nes-btn ${filter === 'all' ? 'is-primary' : ''}`}
           style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}
@@ -90,6 +87,7 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
           All
         </button>
         <button
+          type="button"
           onClick={() => setFilter(1)}
           className={`nes-btn ${filter === 1 ? 'is-success' : ''}`}
           style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}
@@ -97,6 +95,7 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
           Challenge 1
         </button>
         <button
+          type="button"
           onClick={() => setFilter(2)}
           className={`nes-btn ${filter === 2 ? 'is-warning' : ''}`}
           style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}
@@ -105,6 +104,7 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
         </button>
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
             className="nes-btn is-error"
             style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', marginLeft: 'auto' }}
@@ -114,78 +114,86 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
         )}
       </div>
 
-      {/* Leaderboard Table */}
-      {loading ? (
-        <div className="text-center" style={{ padding: '2rem' }}>
-          <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>Loading...</p>
-        </div>
-      ) : entries.length === 0 ? (
-        <div className="text-center" style={{ padding: '2rem' }}>
-          <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', opacity: 0.7 }}>
-            No entries yet. Be the first to compete!
-          </p>
-        </div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="nes-table is-bordered is-dark" style={{ width: '100%', fontSize: 'clamp(0.4rem, 1.8vw, 0.6rem)' }}>
-            <thead>
-              <tr>
-                <th style={{ padding: '0.5rem' }}>Rank</th>
-                <th style={{ padding: '0.5rem' }}>Player</th>
-                <th style={{ padding: '0.5rem' }}>Challenge</th>
-                <th style={{ padding: '0.5rem' }}>Score</th>
-                <th style={{ padding: '0.5rem' }}>Grade</th>
-                <th style={{ padding: '0.5rem' }}>Prompts</th>
-                <th style={{ padding: '0.5rem' }}>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry, index) => (
-                <tr key={entry.id}>
-                  <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                    {getRankIcon(index)}
-                  </td>
-                  <td style={{ padding: '0.5rem', fontWeight: index < 3 ? 'bold' : 'normal' }}>
-                    {entry.playerName}
-                  </td>
-                  <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                    <span
-                      className={`nes-badge is-splited`}
-                      style={{ fontSize: 'inherit' }}
-                    >
-                      <span className={entry.challenge === 1 ? 'is-success' : 'is-warning'}>
-                        {entry.challenge}
-                      </span>
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                    {entry.score}/{entry.maxScore}
-                    <br />
-                    <span style={{ opacity: 0.7 }}>({entry.percentage}%)</span>
-                  </td>
-                  <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                    <span
-                      style={{
-                        color: getGradeColor(entry.grade),
-                        fontWeight: 'bold',
-                        fontSize: 'clamp(0.6rem, 2.5vw, 1rem)',
-                      }}
-                    >
-                      {entry.grade}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                    {entry.promptsUsed}/7
-                  </td>
-                  <td style={{ padding: '0.5rem', fontSize: 'clamp(0.35rem, 1.5vw, 0.5rem)' }}>
-                    {formatDate(entry.createdAt)}
-                  </td>
+      <div className="nes-container is-dark with-title">
+        <p className="title" style={{ fontSize: 'clamp(0.7rem, 3vw, 1rem)' }}>
+          Leaderboard {filter !== 'all' ? `- Challenge ${filter}` : ''}
+        </p>
+
+        {/* Leaderboard Table */}
+        {loading ? (
+          <div className="text-center" style={{ padding: '2rem' }}>
+            <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>Loading...</p>
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="text-center" style={{ padding: '2rem' }}>
+            <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', opacity: 0.7 }}>
+              No entries yet. Be the first to compete!
+            </p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="nes-table is-bordered is-dark" style={{ width: '100%', fontSize: 'clamp(0.4rem, 1.8vw, 0.6rem)' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '0.5rem' }}>Rank</th>
+                  <th style={{ padding: '0.5rem' }}>Player</th>
+                  {filter === 'all' && <th style={{ padding: '0.5rem' }}>Challenge</th>}
+                  <th style={{ padding: '0.5rem' }}>Score</th>
+                  <th style={{ padding: '0.5rem' }}>Grade</th>
+                  <th style={{ padding: '0.5rem' }}>Prompts</th>
+                  <th style={{ padding: '0.5rem' }}>Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {entries.map((entry, index) => (
+                  <tr key={entry.id}>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {getRankIcon(index)}
+                    </td>
+                    <td style={{ padding: '0.5rem', fontWeight: index < 3 ? 'bold' : 'normal' }}>
+                      {entry.playerName}
+                    </td>
+                    {filter === 'all' && (
+                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                        <span
+                          className="nes-badge is-splited"
+                          style={{ fontSize: 'inherit' }}
+                        >
+                          <span className={entry.challenge === 1 ? 'is-success' : 'is-warning'}>
+                            {entry.challenge}
+                          </span>
+                        </span>
+                      </td>
+                    )}
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {entry.score}/{entry.maxScore}
+                      <br />
+                      <span style={{ opacity: 0.7 }}>({entry.percentage}%)</span>
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      <span
+                        style={{
+                          color: getGradeColor(entry.grade),
+                          fontWeight: 'bold',
+                          fontSize: 'clamp(0.6rem, 2.5vw, 1rem)',
+                        }}
+                      >
+                        {entry.grade}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                      {entry.promptsUsed}/7
+                    </td>
+                    <td style={{ padding: '0.5rem', fontSize: 'clamp(0.35rem, 1.5vw, 0.5rem)' }}>
+                      {formatDate(entry.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

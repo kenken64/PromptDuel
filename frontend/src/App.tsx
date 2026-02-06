@@ -6,6 +6,7 @@ import { CombinedChat } from './components/CombinedChat';
 import { InfoTabs } from './components/InfoTabs';
 import { LandingPage } from './components/LandingPage';
 import { GroupSetup } from './components/GroupSetup';
+import { getFinalScore, getMultiplier } from './gameRules';
 
 type Player = 'player1' | 'player2';
 type AppScreen = 'landing' | 'group-setup' | 'game' | 'results';
@@ -50,6 +51,7 @@ export default function App() {
   });
 
   const [currentTurn, setCurrentTurn] = useState<Player>('player1');
+  const [gameTimeoutMinutes, setGameTimeoutMinutes] = useState(20);
   const [timeLeft, setTimeLeft] = useState(20 * 60); // 20 minutes in seconds
   const [isActive, setIsActive] = useState(false);
   const [winner, setWinner] = useState<Player | null>(null);
@@ -214,9 +216,11 @@ export default function App() {
     setCurrentScreen('group-setup');
   };
 
-  const handleGroupSetup = (p1Name: string, p2Name: string) => {
+  const handleGroupSetup = (p1Name: string, p2Name: string, timeoutMinutes: number) => {
     setPlayer1((prev) => ({ ...prev, name: p1Name }));
     setPlayer2((prev) => ({ ...prev, name: p2Name }));
+    setGameTimeoutMinutes(timeoutMinutes);
+    setTimeLeft(timeoutMinutes * 60);
     setCurrentScreen('game');
 
     // Connect both players to Claude Code Server
@@ -232,24 +236,20 @@ export default function App() {
 
   const startDuel = () => {
     setIsActive(true);
-    setTimeLeft(20 * 60); // 20 minutes
+    setTimeLeft(gameTimeoutMinutes * 60);
     setPlayer1({ ...player1, isReady: false, prompt: '' });
     setPlayer2({ ...player2, isReady: false, prompt: '' });
     addMessage(
       'Judge Alpha',
-      `Challenge ${selectedChallenge} begins! You have 20 minutes. Good luck!`,
+      `Challenge ${selectedChallenge} begins! You have ${gameTimeoutMinutes} minutes. Good luck!`,
       'judge',
     );
   };
 
   const handleTimeUp = () => {
     setIsActive(false);
-    addMessage('Judge Alpha', 'Time is up! The challenge has ended.', 'judge');
-    // Determine winner based on prompts used (more engagement = more points)
-    const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
-                        player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
-    setWinner(finalWinner);
-    setCurrentScreen('results');
+    addMessage('Judge Alpha', 'Time is up! Evaluating both workspaces...', 'judge');
+    runEvaluation();
   };
 
   const handlePromptChange = (player: Player, prompt: string) => {
@@ -365,22 +365,32 @@ export default function App() {
 
       if (results.success) {
         setEvaluationResults(results);
-        // Update scores based on evaluation
+        // Update raw scores based on evaluation
         setPlayer1((prev) => ({ ...prev, score: results.player1.totalScore }));
         setPlayer2((prev) => ({ ...prev, score: results.player2.totalScore }));
-        setWinner(results.winner);
-        addMessage('Judge Alpha', `Evaluation complete! ${results.winner === 'player1' ? player1.name : results.winner === 'player2' ? player2.name : 'It\'s a tie'}!`, 'judge');
+        // Determine winner using final scores (raw × multiplier)
+        const p1Final = getFinalScore(results.player1.totalScore, player1.promptsUsed);
+        const p2Final = getFinalScore(results.player2.totalScore, player2.promptsUsed);
+        const evalWinner = p1Final > p2Final ? 'player1' as const :
+                           p2Final > p1Final ? 'player2' as const : null;
+        setWinner(evalWinner);
+        const winnerName = evalWinner === 'player1' ? player1.name : evalWinner === 'player2' ? player2.name : null;
+        addMessage('Judge Alpha', `Evaluation complete! ${winnerName ? `${winnerName} wins!` : "It's a tie!"}`, 'judge');
       } else {
         addMessage('Judge Alpha', 'Evaluation failed. Please check the workspaces.', 'judge');
-        const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
-                            player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
+        const p1Final = getFinalScore(player1.score, player1.promptsUsed);
+        const p2Final = getFinalScore(player2.score, player2.promptsUsed);
+        const finalWinner = p1Final > p2Final ? 'player1' :
+                            p2Final > p1Final ? 'player2' : null;
         setWinner(finalWinner);
       }
     } catch (error) {
       console.error('Evaluation error:', error);
       addMessage('Judge Alpha', 'Could not connect to evaluation server.', 'judge');
-      const finalWinner = player1.promptsUsed > player2.promptsUsed ? 'player1' :
-                          player2.promptsUsed > player1.promptsUsed ? 'player2' : null;
+      const p1Final = getFinalScore(player1.score, player1.promptsUsed);
+      const p2Final = getFinalScore(player2.score, player2.promptsUsed);
+      const finalWinner = p1Final > p2Final ? 'player1' :
+                          p2Final > p1Final ? 'player2' : null;
       setWinner(finalWinner);
     }
     setIsEvaluating(false);
@@ -412,7 +422,8 @@ export default function App() {
 
     setPlayer1({ name: 'Player 1', prompt: '', score: 0, isReady: false, promptsUsed: 0, hasEnded: false });
     setPlayer2({ name: 'Player 2', prompt: '', score: 0, isReady: false, promptsUsed: 0, hasEnded: false });
-    setTimeLeft(20 * 60); // 20 minutes
+    setGameTimeoutMinutes(20);
+    setTimeLeft(20 * 60);
     setIsActive(false);
     setEvaluationResults(null);
     setIsEvaluating(false);
@@ -441,6 +452,18 @@ export default function App() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, timeLeft]);
+
+  // Warn user before leaving/refreshing during an active game
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (currentScreen === 'game' || currentScreen === 'group-setup') {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [currentScreen]);
 
   // Cleanup WebSocket connections on unmount
   useEffect(() => {
@@ -522,7 +545,7 @@ export default function App() {
 
       {/* Main Battle Area */}
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {!isActive && timeLeft === 20 * 60 && (
+        {!isActive && timeLeft === gameTimeoutMinutes * 60 && (
           <div className="text-center mb-4 sm:mb-8">
             <button
               onClick={startDuel}
@@ -597,7 +620,10 @@ export default function App() {
                 <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player1.name}</p>
               </div>
               <p style={{ fontSize: 'clamp(1.5rem, 5vw, 2rem)', color: '#209cee' }}>
-                {player1.score}
+                {getFinalScore(player1.score, player1.promptsUsed)}
+              </p>
+              <p style={{ fontSize: 'clamp(0.35rem, 1.5vw, 0.5rem)', color: '#888' }}>
+                {player1.score} × {getMultiplier(player1.promptsUsed)}
               </p>
             </div>
 
@@ -609,7 +635,10 @@ export default function App() {
                 <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player2.name}</p>
               </div>
               <p style={{ fontSize: 'clamp(1.5rem, 5vw, 2rem)', color: '#92cc41' }}>
-                {player2.score}
+                {getFinalScore(player2.score, player2.promptsUsed)}
+              </p>
+              <p style={{ fontSize: 'clamp(0.35rem, 1.5vw, 0.5rem)', color: '#888' }}>
+                {player2.score} × {getMultiplier(player2.promptsUsed)}
               </p>
             </div>
           </div>

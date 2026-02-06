@@ -593,6 +593,25 @@ body {
   animation: 2s ease-in-out infinite pixel-pulse;
 }
 
+/* Group Setup responsive layout */
+.group-setup-rules {
+  order: 2;
+}
+
+.group-setup-form {
+  order: 1;
+}
+
+@media (min-width: 720px) {
+  .group-setup-rules {
+    order: 1;
+  }
+
+  .group-setup-form {
+    order: 2;
+  }
+}
+
 .nes-container {
   margin-bottom: 1rem;
 }

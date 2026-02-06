@@ -48,15 +48,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
         Select Your Challenge
       </p>
 
-      {/* Challenge Selection - Vertical Stack */}
+      {/* Challenge Selection - Side by Side */}
       <div
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          gap: '1.5rem',
+          flexDirection: 'row',
+          gap: '2rem',
           width: '100%',
-          maxWidth: '400px',
+          maxWidth: '850px',
           padding: '0 1rem',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
         }}
       >
         {/* Challenge 1 */}
@@ -71,6 +73,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
             overflow: 'hidden',
             cursor: 'pointer',
             transition: 'transform 0.2s',
+            flex: '1 1 300px',
+            maxWidth: '400px',
+            minWidth: '280px',
           }}
           onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
           onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
@@ -188,6 +193,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
             overflow: 'hidden',
             cursor: 'pointer',
             transition: 'transform 0.2s',
+            flex: '1 1 300px',
+            maxWidth: '400px',
+            minWidth: '280px',
           }}
           onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
           onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}

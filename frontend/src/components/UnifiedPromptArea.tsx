@@ -1,3 +1,5 @@
+import { MAX_PROMPT_CHARS, getMultiplier, MULTIPLIER_TABLE, MAX_PROMPTS } from '../gameRules';
+
 type Player = 'player1' | 'player2';
 
 interface PlayerState {
@@ -35,6 +37,10 @@ export function UnifiedPromptArea({
   const isProcessing = player1Processing || player2Processing;
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
   const isPlayer1Turn = currentTurn === 'player1';
+  const charsLeft = MAX_PROMPT_CHARS - currentPlayer.prompt.length;
+  const isOverLimit = charsLeft < 0;
+  const currentMultiplier = getMultiplier(currentPlayer.promptsUsed);
+  const nextMultiplier = getMultiplier(currentPlayer.promptsUsed + 1);
 
   return (
     <div className="nes-container is-dark with-title" style={{ position: 'relative' }}>
@@ -134,7 +140,8 @@ export function UnifiedPromptArea({
           <textarea
             value={currentPlayer.prompt}
             onChange={(e) => onPromptChange(currentTurn, e.target.value)}
-            disabled={!isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= 7 || currentPlayer.hasEnded}
+            disabled={!isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
+            maxLength={MAX_PROMPT_CHARS + 50}
             className="nes-textarea"
             style={{
               minHeight: '150px',
@@ -147,9 +154,9 @@ export function UnifiedPromptArea({
                 ? 'Waiting to start...'
                 : currentPlayer.hasEnded
                   ? "You've ended your prompts!"
-                  : currentPlayer.promptsUsed >= 7
+                  : currentPlayer.promptsUsed >= MAX_PROMPTS
                     ? "You've used all your prompts!"
-                    : 'Write your creative prompt here...'
+                    : `Write your prompt here... (max ${MAX_PROMPT_CHARS} chars)`
             }
           />
         </div>
@@ -157,19 +164,36 @@ export function UnifiedPromptArea({
           className="mt-2 flex justify-between items-center flex-wrap gap-2"
           style={{ fontSize: 'clamp(0.4rem, 2vw, 0.6rem)' }}
         >
-          <div>
-            {currentPlayer.prompt.length} chars •{' '}
-            {
-              currentPlayer.prompt
-                .trim()
-                .split(/\s+/)
-                .filter((w) => w).length
-            }{' '}
-            words
+          <div style={{ color: isOverLimit ? '#e76e55' : charsLeft <= 40 ? '#f7d51d' : undefined }}>
+            {currentPlayer.prompt.length}/{MAX_PROMPT_CHARS} chars
+            {isOverLimit && (
+              <span style={{ color: '#e76e55', marginLeft: '0.5rem' }}>
+                ({Math.abs(charsLeft)} over limit!)
+              </span>
+            )}
           </div>
-          <div style={{ color: currentPlayer.promptsUsed >= 7 ? '#e76e55' : undefined }}>
-            Remaining: {7 - currentPlayer.promptsUsed}
+          <div style={{ color: currentPlayer.promptsUsed >= MAX_PROMPTS ? '#e76e55' : undefined }}>
+            Remaining: {MAX_PROMPTS - currentPlayer.promptsUsed}
           </div>
+        </div>
+
+        {/* Character limit bar */}
+        <div
+          style={{
+            marginTop: '0.4rem',
+            height: '4px',
+            backgroundColor: '#333',
+            width: '100%',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${Math.min((currentPlayer.prompt.length / MAX_PROMPT_CHARS) * 100, 100)}%`,
+              backgroundColor: isOverLimit ? '#e76e55' : charsLeft <= 40 ? '#f7d51d' : '#92cc41',
+              transition: 'width 0.1s, background-color 0.2s',
+            }}
+          />
         </div>
       </div>
 
@@ -179,8 +203,9 @@ export function UnifiedPromptArea({
         disabled={
           !isActive ||
           !currentPlayer.prompt.trim() ||
+          isOverLimit ||
           currentPlayer.isReady ||
-          currentPlayer.promptsUsed >= 7 ||
+          currentPlayer.promptsUsed >= MAX_PROMPTS ||
           currentPlayer.hasEnded ||
           isProcessing
         }
@@ -216,13 +241,56 @@ export function UnifiedPromptArea({
         </button>
       )}
 
-      {/* Tips */}
-      {isActive && !currentPlayer.isReady && currentPlayer.promptsUsed < 7 && !currentPlayer.hasEnded && (
+      {/* Multiplier Info */}
+      {isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed < MAX_PROMPTS && (
         <div
-          className="nes-container is-rounded"
-          style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', padding: '0.8rem', lineHeight: '1.4' }}
+          className="nes-container is-dark"
+          style={{
+            fontSize: 'clamp(0.4rem, 2vw, 0.55rem)',
+            padding: '0.8rem',
+            lineHeight: '1.6',
+            borderColor: '#f7d51d',
+          }}
         >
-          <p>💡 Tip: Be creative! Longer prompts earn more points.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <span style={{ color: '#f7d51d' }}>Current multiplier: </span>
+              <span style={{
+                color: currentMultiplier >= 0.85 ? '#92cc41' : currentMultiplier >= 0.5 ? '#f7d51d' : '#e76e55',
+                fontWeight: 'bold',
+              }}>
+                {currentMultiplier > 0 ? `×${currentMultiplier}` : '---'}
+              </span>
+              {currentPlayer.promptsUsed > 0 && currentPlayer.promptsUsed < MAX_PROMPTS && (
+                <span style={{ color: '#888', marginLeft: '0.8rem' }}>
+                  Next prompt: ×{nextMultiplier}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.2rem' }}>
+              {Object.entries(MULTIPLIER_TABLE).slice(1).map(([n]) => (
+                <div
+                  key={n}
+                  style={{
+                    width: 'clamp(1rem, 3vw, 1.5rem)',
+                    height: 'clamp(1rem, 3vw, 1.5rem)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 'clamp(0.3rem, 1.2vw, 0.4rem)',
+                    border: `2px solid ${Number(n) <= currentPlayer.promptsUsed ? '#92cc41' : '#444'}`,
+                    color: Number(n) <= currentPlayer.promptsUsed ? '#92cc41' : '#666',
+                    backgroundColor: Number(n) === currentPlayer.promptsUsed + 1 ? '#333' : 'transparent',
+                  }}
+                >
+                  {n}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginTop: '0.4rem', color: '#888' }}>
+            Final Score = Code Quality × Multiplier — use more prompts for a higher multiplier!
+          </div>
         </div>
       )}
     </div>
