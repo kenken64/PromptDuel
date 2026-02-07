@@ -1,6 +1,6 @@
 # Prompt Duel
 
-A competitive prompt engineering game where two players battle head-to-head to write the best prompts for Claude Code. Each player gets up to 7 prompts to complete a coding challenge - the fewer prompts used with a higher score, the better!
+A competitive multiplayer prompt engineering game where two players battle head-to-head to write the best prompts for Claude Code. Each player gets up to 7 prompts to complete a coding challenge - the fewer prompts used with a higher score, the better!
 
 ## What is Prompt Duel?
 
@@ -8,11 +8,28 @@ Prompt Duel is a real-time multiplayer game that tests your prompt engineering s
 
 ### How It Works
 
-1. **Choose a Challenge** - Select from beginner or advanced coding challenges
-2. **Enter Player Names** - Set up the two-player duel
-3. **Take Turns Prompting** - Players alternate submitting prompts to Claude Code
-4. **Watch Claude Work** - See real-time terminal output as Claude builds the solution
-5. **Score & Win** - Automated evaluation scores each player's solution
+1. **Register/Login** - Create an account or sign in
+2. **Create or Join Room** - Start a new room or join with a code
+3. **Ready Up** - Both players mark ready, host starts the game
+4. **Take Turns Prompting** - Players alternate submitting prompts to Claude Code
+5. **Watch Claude Work** - See real-time terminal output as Claude builds the solution
+6. **Score & Win** - Automated evaluation scores each player's solution
+
+## Features
+
+- **User Authentication** - Register, login, and track your progress
+- **Room System** - Create private rooms with unique codes
+- **Real-time Multiplayer** - WebSocket-powered live gameplay
+- **Chat System** - Communicate with opponents in the waiting room
+- **Spectator Mode** - Watch live games without participating
+- **Leaderboard** - Global rankings filtered by challenge
+- **Turn-based Gameplay** - Fair alternating prompt submission
+- **Live Terminal Output** - Watch Claude Code work in real-time
+- **Automated Scoring** - AI-powered evaluation with detailed breakdown
+- **Sample Prompts** - Learn from example solutions after each game
+- **Retro UI** - NES.css styled interface for that classic gaming feel
+- **Docker Support** - Easy deployment with Docker Compose
+- **Railway Ready** - Deploy to cloud with included configuration
 
 ## Game Mechanics
 
@@ -32,6 +49,29 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 | 6 prompts | 0.95× |
 | 7 prompts | 1.0× |
 
+### Evaluation Categories
+
+**Challenge 1 - BracketValidator (Beginner):**
+| Category | Weight |
+|----------|--------|
+| Functionality / Test Cases | 40% |
+| Algorithm Efficiency | 20% |
+| Error Handling | 15% |
+| Code Quality | 15% |
+| CLI Implementation | 10% |
+
+**Challenge 2 - QuantumHeist (Advanced):**
+| Category | Weight |
+|----------|--------|
+| Algorithm Design & Implementation | 25% |
+| Data Structures | 20% |
+| Game Mechanics Implementation | 20% |
+| Code Quality | 15% |
+| Complexity Analysis | 10% |
+| Testing & Correctness | 5% |
+| Performance | 3% |
+| Documentation | 2% |
+
 ### Rules
 
 - Each player gets a maximum of **7 prompts**
@@ -39,6 +79,7 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 - Game has a **20-minute timer** (configurable)
 - Players can **end early** if satisfied with their solution
 - Turn-based gameplay ensures fair competition
+- Host can end duel early (forfeit rules apply if opponent hasn't finished)
 
 ### Challenges
 
@@ -47,31 +88,27 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 | Challenge 1 | Beginner | **BracketValidator** - Build a CLI tool using stack-based bracket validation |
 | Challenge 2 | Advanced | **QuantumHeist** - Build a terminal pathfinding puzzle game with Dijkstra's algorithm |
 
-## Features
-
-- **Real-time Claude Code Integration** - Each player gets their own PTY terminal session
-- **Live Terminal Output** - Watch Claude Code work in real-time
-- **Automated Scoring** - AI-powered evaluation of solutions
-- **Leaderboard** - Track top scores across all games
-- **Retro UI** - NES.css styled interface for that classic gaming feel
-- **Turn-based Gameplay** - Fair alternating prompt submission
-- **Docker Support** - Easy deployment with Docker Compose
-- **Railway Ready** - Deploy to cloud with included configuration
-
 ## Screenshots
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    PROMPT DUEL                          │
-│                                                         │
-│     ┌─────────────┐         ┌─────────────┐            │
-│     │ Challenge 1 │         │ Challenge 2 │            │
-│     │   ★         │         │   🏆        │            │
-│     │  BEGINNER   │         │  ADVANCED   │            │
-│     └─────────────┘         └─────────────┘            │
-│                                                         │
-│              [ View Leaderboard ]                       │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        PROMPT DUEL                               │
+│                                                                  │
+│   ┌───────────────────────────────────────────────────────────┐ │
+│   │  LOBBY                          Welcome, player1           │ │
+│   ├───────────────────────────────────────────────────────────┤ │
+│   │                                                            │ │
+│   │  [+ Create Room]  [Join by Code]  [Leaderboard]  [Refresh]│ │
+│   │                                                            │ │
+│   │  Available Rooms                                           │ │
+│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │ │
+│   │  │ ABC123       │  │ XYZ789       │  │ DEF456       │     │ │
+│   │  │ Challenge 1  │  │ Challenge 2  │  │ Challenge 1  │     │ │
+│   │  │ host1 vs ??? │  │ LIVE         │  │ Waiting...   │     │ │
+│   │  │ [Join]       │  │ [Watch]      │  │ [Spectate]   │     │ │
+│   │  └──────────────┘  └──────────────┘  └──────────────┘     │ │
+│   └───────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Tech Stack
@@ -80,30 +117,35 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 |-------|------------|
 | Frontend | React, Vite, TypeScript, NES.css, Tailwind CSS |
 | Backend | Bun, Elysia, Drizzle ORM, SQLite |
+| Real-time | Supabase Realtime, WebSocket |
 | Claude Integration | Node.js, WebSocket (ws), node-pty, Claude Code CLI |
 | Deployment | Docker, Docker Compose, Railway |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Prompt Duel                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌──────────────────┐ │
-│  │  Frontend   │    │   Backend   │    │ Claude Code      │ │
-│  │  (React)    │───▶│  (Elysia)   │    │ Server (node-pty)│ │
-│  │  Port 5173  │    │  Port 3000  │    │ Port 3001        │ │
-│  └──────┬──────┘    └──────┬──────┘    └────────┬─────────┘ │
-│         │                  │                     │           │
-│         │           ┌──────▼──────┐              │           │
-│         │           │   SQLite    │              ▼           │
-│         │           │  Database   │     ┌───────────────┐   │
-│         │           └─────────────┘     │  Claude Code  │   │
-│         │                               │     CLI       │   │
-│         └───────────────────────────────┴───────────────┘   │
-│                      WebSocket Connection                    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Prompt Duel                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌──────────────────────┐ │
+│  │  Frontend   │    │   Backend   │    │  Claude Code Server  │ │
+│  │   (React)   │◄──►│  (Elysia)   │    │     (node-pty)       │ │
+│  │  Port 5173  │    │  Port 3000  │    │     Port 3001        │ │
+│  └──────┬──────┘    └──────┬──────┘    └──────────┬───────────┘ │
+│         │                  │                       │             │
+│         │           ┌──────▼──────┐                │             │
+│         │           │   SQLite    │                ▼             │
+│         │           │  Database   │       ┌───────────────┐     │
+│         │           └─────────────┘       │  Claude Code  │     │
+│         │                                 │     CLI       │     │
+│         │                  ┌──────────────┴───────────────┘     │
+│         │                  │                                     │
+│         │           ┌──────▼──────┐                              │
+│         └──────────►│  Supabase   │◄─────────────────────────── │
+│                     │  (Realtime) │                              │
+│                     └─────────────┘                              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -113,11 +155,12 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 - [Node.js](https://nodejs.org/) v20+
 - [Bun](https://bun.sh/) (for backend)
 - [Anthropic API Key](https://console.anthropic.com/) (for Claude Code)
+- [Supabase Account](https://supabase.com/) (for real-time sync)
 
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/promptduel.git
+git clone https://github.com/kenken64/PromptDuel.git
 cd promptduel
 
 # Install dependencies
@@ -130,10 +173,19 @@ cd claude-code-server && npm install && cd ..
 
 ```bash
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Edit .env and add your keys:
+# - ANTHROPIC_API_KEY
+# - SUPABASE_URL
+# - SUPABASE_ANON_KEY
 ```
 
-### 3. Start Services
+### 3. Setup Database
+
+```bash
+cd backend && bun run db:setup
+```
+
+### 4. Start Services
 
 **Windows (PowerShell):**
 ```powershell
@@ -145,7 +197,7 @@ cp .env.example .env
 bash scripts/start-all.sh
 ```
 
-### 4. Play!
+### 5. Play!
 
 Open http://localhost:5173 in your browser.
 
@@ -154,7 +206,7 @@ Open http://localhost:5173 in your browser.
 ```bash
 # Copy and configure environment
 cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
+# Add your ANTHROPIC_API_KEY and Supabase keys to .env
 
 # Build and run all services
 docker-compose up --build
@@ -181,21 +233,26 @@ promptduel/
 ├── frontend/               # React + Vite frontend
 │   ├── src/
 │   │   ├── components/     # React components
-│   │   ├── hooks/          # Custom hooks
+│   │   ├── contexts/       # Auth, Room, Game contexts
+│   │   ├── pages/          # Page components
 │   │   ├── config.ts       # API configuration
 │   │   └── gameRules.ts    # Scoring logic
 │   └── Dockerfile
 ├── backend/                # Elysia/Bun API server
 │   ├── src/
 │   │   ├── db/             # Database schema & setup
+│   │   ├── routes/         # API routes (auth, rooms, chat)
+│   │   ├── ws/             # WebSocket handlers
+│   │   ├── middleware/     # Auth middleware
 │   │   ├── evaluate.ts     # Solution evaluation
-│   │   └── index.ts        # API routes
+│   │   └── index.ts        # Main entry point
 │   └── Dockerfile
 ├── claude-code-server/     # WebSocket PTY server
 │   ├── index.js            # PTY session manager
 │   └── Dockerfile
 ├── workspaces/             # Player workspace files (auto-created)
 ├── scripts/                # Start/stop scripts
+├── PRDs/                   # Product Requirements Documents
 ├── docker-compose.yml      # Docker orchestration
 ├── RAILWAY.md              # Railway deployment guide
 └── CLAUDE.md               # Project documentation
@@ -206,6 +263,9 @@ promptduel/
 | Variable | Service | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | claude-code-server | **Required** - Anthropic API key |
+| `SUPABASE_URL` | frontend | Supabase project URL |
+| `SUPABASE_ANON_KEY` | frontend | Supabase anonymous key |
+| `JWT_SECRET` | backend | Secret for JWT signing |
 | `DATABASE_URL` | backend | SQLite database path |
 | `WORKSPACES_DIR` | claude-code-server | Player workspace directory |
 | `VITE_API_URL` | frontend | Backend API URL |
@@ -213,18 +273,63 @@ promptduel/
 
 ## API Endpoints
 
+### Authentication
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/evaluate` | POST | Evaluate both players' solutions |
-| `/evaluate-player` | POST | Evaluate single player's solution |
-| `/leaderboard` | GET | Get all leaderboard entries |
-| `/leaderboard/:challenge` | GET | Get leaderboard for specific challenge |
-| `/leaderboard` | POST | Add new leaderboard entry |
+| `/auth/register` | POST | Create new account |
+| `/auth/login` | POST | Login and get JWT |
+| `/auth/logout` | POST | Invalidate session |
+| `/auth/me` | GET | Get current user |
+
+### Rooms
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/rooms` | GET | List all rooms |
+| `/rooms` | POST | Create new room |
+| `/rooms/:code` | GET | Get room details |
+| `/rooms/:code/join` | POST | Join as player |
+| `/rooms/:code/spectate` | POST | Join as spectator |
+| `/rooms/:code/ready` | POST | Toggle ready status |
+| `/rooms/:code/start` | POST | Start game (host only) |
+
+### Game
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/evaluate` | POST | Evaluate both players |
+| `/evaluate-player` | POST | Evaluate single player |
+| `/leaderboard` | GET | Get all rankings |
+| `/leaderboard/:challenge` | GET | Get challenge rankings |
+| `/leaderboard` | POST | Add leaderboard entry |
+| `/challenge-prompts/:challenge` | GET | Get sample prompts |
+
+## Database Schema
+
+```sql
+-- Core tables
+users (id, username, email, password_hash, last_login_at, created_at)
+sessions (id, user_id, token, expires_at, created_at)
+rooms (id, code, host_id, challenge, status, player1_id, player2_id, player1_ready, player2_ready, created_at)
+room_spectators (id, room_id, user_id, joined_at)
+chat_messages (id, room_id, user_id, message, created_at)
+leaderboard (id, player_name, challenge, score, max_score, percentage, grade, prompts_used, created_at)
+challenge_prompts (id, challenge, prompt_number, title, content, created_at)
+```
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Documentation
+
+- [Product Requirements Document](./PRDs/PRD-PromptDuel-v1.0.md)
+- [Railway Deployment Guide](./RAILWAY.md)
+- [Project Overview](./CLAUDE.md)
 
 ## License
 
