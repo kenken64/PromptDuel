@@ -15,11 +15,15 @@
     "format": "prettier --write 'src/**/*.{ts,tsx,json,md}'"
   },
   "dependencies": {
+    "@elysiajs/bearer": "^1.4.3",
     "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/jwt": "^1.4.0",
+    "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.36.4",
     "elysia": "^1.1.29"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^8.48.1",
     "@typescript-eslint/parser": "^8.48.1",

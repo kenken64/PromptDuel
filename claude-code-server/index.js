@@ -10,6 +10,7 @@ const __dirname = dirname(__filename);
 
 const PORT = 3001;
 const sessions = new Map();
+const spectatorConnections = new Map(); // roomCode -> Set of WebSocket connections
 
 // Base directory for player workspaces (override with WORKSPACES_DIR env var)
 const WORKSPACES_DIR = process.env.WORKSPACES_DIR
@@ -251,16 +252,35 @@ If the prompt is vague or unclear, create a minimal implementation that matches 
   }
 }
 
+// Broadcast terminal output to spectators of a room
+function broadcastToSpectators(roomCode, playerName, data) {
+  const spectators = spectatorConnections.get(roomCode);
+  if (!spectators || spectators.size === 0) return;
+
+  const message = JSON.stringify({
+    type: 'terminal-output',
+    playerName,
+    data,
+  });
+
+  spectators.forEach((spectatorWs) => {
+    if (spectatorWs.readyState === 1) { // WebSocket.OPEN
+      spectatorWs.send(message);
+    }
+  });
+}
+
 wss.on('connection', (ws) => {
   console.log('WebSocket client connected');
   let sessionId = null;
+  let spectatingRoom = null;
 
   ws.on('message', (message) => {
     try {
       const msg = JSON.parse(message.toString());
 
       if (msg.type === 'start-session') {
-        const { cols = 80, rows = 24, playerName, challenge } = msg;
+        const { cols = 80, rows = 24, playerName, challenge, roomCode } = msg;
 
         let cwd = WORKSPACES_DIR;
 
@@ -306,7 +326,7 @@ wss.on('connection', (ws) => {
         });
 
         sessionId = `${sanitizeName(playerName || 'player')}_${Date.now()}`;
-        sessions.set(sessionId, { ptyProcess, ws, playerName, challenge });
+        sessions.set(sessionId, { ptyProcess, ws, playerName, challenge, roomCode });
 
         console.log(`PTY session ${sessionId} created with PID: ${ptyProcess.pid}`);
 
@@ -340,6 +360,10 @@ wss.on('connection', (ws) => {
                 const cleanedData = data.replace(session.completionMarker, '').replace(/\n\s*\n/g, '\n');
                 if (cleanedData.trim()) {
                   ws.send(JSON.stringify({ type: 'output', data: cleanedData }));
+                  // Also broadcast to spectators
+                  if (session.roomCode) {
+                    broadcastToSpectators(session.roomCode, session.playerName, cleanedData);
+                  }
                 }
                 session.completionMarker = null;
                 return;
@@ -347,6 +371,11 @@ wss.on('connection', (ws) => {
             }
 
             ws.send(JSON.stringify({ type: 'output', data }));
+
+            // Broadcast terminal output to spectators if in a room
+            if (session && session.roomCode) {
+              broadcastToSpectators(session.roomCode, session.playerName, data);
+            }
           }
         });
 
@@ -422,6 +451,30 @@ echo "${completionMarker}"
           sessions.delete(sessionId);
           console.log(`Session ${sessionId} killed`);
         }
+      } else if (msg.type === 'spectate-session') {
+        // Allow a connection to spectate a room
+        const { roomCode } = msg;
+        if (roomCode) {
+          spectatingRoom = roomCode;
+          if (!spectatorConnections.has(roomCode)) {
+            spectatorConnections.set(roomCode, new Set());
+          }
+          spectatorConnections.get(roomCode).add(ws);
+          console.log(`Spectator joined room ${roomCode}`);
+          ws.send(JSON.stringify({ type: 'spectate-started', roomCode }));
+        }
+      } else if (msg.type === 'leave-spectate') {
+        if (spectatingRoom) {
+          const spectators = spectatorConnections.get(spectatingRoom);
+          if (spectators) {
+            spectators.delete(ws);
+            if (spectators.size === 0) {
+              spectatorConnections.delete(spectatingRoom);
+            }
+          }
+          console.log(`Spectator left room ${spectatingRoom}`);
+          spectatingRoom = null;
+        }
       }
     } catch (e) {
       console.error('Error processing message:', e);
@@ -436,6 +489,16 @@ echo "${completionMarker}"
       if (session) {
         session.ptyProcess.kill();
         sessions.delete(sessionId);
+      }
+    }
+    // Clean up spectator connection
+    if (spectatingRoom) {
+      const spectators = spectatorConnections.get(spectatingRoom);
+      if (spectators) {
+        spectators.delete(ws);
+        if (spectators.size === 0) {
+          spectatorConnections.delete(spectatingRoom);
+        }
       }
     }
   });

@@ -21,6 +21,7 @@ interface UnifiedPromptAreaProps {
   onEndPrompts: (player: Player) => void;
   player1Processing?: boolean;
   player2Processing?: boolean;
+  readOnly?: boolean;
 }
 
 export function UnifiedPromptArea({
@@ -33,6 +34,7 @@ export function UnifiedPromptArea({
   onEndPrompts,
   player1Processing = false,
   player2Processing = false,
+  readOnly = false,
 }: UnifiedPromptAreaProps) {
   const isProcessing = player1Processing || player2Processing;
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
@@ -140,7 +142,7 @@ export function UnifiedPromptArea({
           <textarea
             value={currentPlayer.prompt}
             onChange={(e) => onPromptChange(currentTurn, e.target.value)}
-            disabled={!isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
+            disabled={readOnly || !isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
             maxLength={MAX_PROMPT_CHARS + 50}
             className="nes-textarea"
             style={{
@@ -201,6 +203,7 @@ export function UnifiedPromptArea({
       <button
         onClick={() => onSubmit(currentTurn)}
         disabled={
+          readOnly ||
           !isActive ||
           !currentPlayer.prompt.trim() ||
           isOverLimit ||
@@ -223,7 +226,7 @@ export function UnifiedPromptArea({
       </button>
 
       {/* End Prompts Early Button */}
-      {isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
+      {!readOnly && isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
         <button
           onClick={() => onEndPrompts(currentTurn)}
           disabled={isProcessing}

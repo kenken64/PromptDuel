@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { Leaderboard } from './Leaderboard';
 
 interface LandingPageProps {
-  onSelectChallenge: (challenge: 1 | 2) => void;
+  onSelectChallenge?: (challenge: 1 | 2) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const { isAuthenticated, user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleChallengeSelect = (challenge: 1 | 2) => {
+    if (isAuthenticated) {
+      navigate('/lobby');
+    } else {
+      navigate('/login');
+    }
+    onSelectChallenge?.(challenge);
+  };
+
   return (
     <div
       style={{
@@ -20,6 +34,51 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
         background: 'radial-gradient(ellipse at center, #2a2f35 0%, #212529 70%)',
       }}
     >
+      {/* Auth Buttons - Top Right */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          display: 'flex',
+          gap: '0.5rem',
+        }}
+      >
+        {isAuthenticated ? (
+          <>
+            <span
+              style={{
+                color: '#92cc41',
+                fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
+                marginRight: '0.5rem',
+                alignSelf: 'center',
+              }}
+            >
+              {user?.username}
+            </span>
+            <Link to="/lobby" className="nes-btn is-success" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
+              Lobby
+            </Link>
+            <button
+              onClick={() => logout()}
+              className="nes-btn is-error"
+              style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <Link to="/login" className="nes-btn is-primary" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
+              Login
+            </Link>
+            <Link to="/register" className="nes-btn is-success" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
+              Register
+            </Link>
+          </>
+        )}
+      </div>
+
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
         <h1
@@ -63,7 +122,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
       >
         {/* Challenge 1 */}
         <div
-          onClick={() => onSelectChallenge(1)}
+          onClick={() => handleChallengeSelect(1)}
           style={{
             background: 'linear-gradient(180deg, #1a1d21 0%, #0d0f11 100%)',
             border: '4px solid #209cee',
@@ -183,7 +242,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
 
         {/* Challenge 2 */}
         <div
-          onClick={() => onSelectChallenge(2)}
+          onClick={() => handleChallengeSelect(2)}
           style={{
             background: 'linear-gradient(180deg, #1a1d21 0%, #0d0f11 100%)',
             border: '4px solid #92cc41',

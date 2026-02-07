@@ -4,11 +4,29 @@ import { db } from './db';
 import { users, prompts, duels, leaderboard } from './db/schema';
 import { evaluateWorkspace, generateGradesMarkdown, saveGradesMarkdown } from './evaluate';
 import { desc, eq } from 'drizzle-orm';
+import { authRoutes } from './routes/auth';
+import { roomRoutes } from './routes/rooms';
+import { chatRoutes } from './routes/chat';
+import { roomWebSocket } from './ws/roomServer';
 
 const app = new Elysia()
-  .use(cors())
+  .use(
+    cors({
+      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      credentials: true,
+    })
+  )
   .get('/', () => 'Prompt Duel API')
   .get('/health', () => ({ status: 'ok', database: 'connected' }))
+  // Auth routes
+  .use(authRoutes)
+  // Room routes
+  .use(roomRoutes)
+  // Chat routes
+  .use(chatRoutes)
+  // Room WebSocket
+  .use(roomWebSocket)
+  // Legacy endpoints (keeping for backwards compatibility)
   .get('/users', async () => {
     const allUsers = await db.select().from(users);
     return allUsers;
@@ -50,15 +68,18 @@ const app = new Elysia()
     };
 
     try {
-      const result = await db.insert(leaderboard).values({
-        playerName,
-        challenge,
-        score,
-        maxScore,
-        percentage,
-        grade,
-        promptsUsed,
-      }).returning();
+      const result = await db
+        .insert(leaderboard)
+        .values({
+          playerName,
+          challenge,
+          score,
+          maxScore,
+          percentage,
+          grade,
+          promptsUsed,
+        })
+        .returning();
 
       return { success: true, entry: result[0] };
     } catch (error) {
@@ -109,11 +130,12 @@ const app = new Elysia()
       const gradesMarkdown = generateGradesMarkdown(player1Result, player2Result);
 
       // Determine winner
-      const winner = player1Result.totalScore > player2Result.totalScore
-        ? 'player1'
-        : player2Result.totalScore > player1Result.totalScore
-        ? 'player2'
-        : null;
+      const winner =
+        player1Result.totalScore > player2Result.totalScore
+          ? 'player1'
+          : player2Result.totalScore > player1Result.totalScore
+            ? 'player2'
+            : null;
 
       return {
         success: true,

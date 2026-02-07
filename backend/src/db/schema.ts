@@ -5,6 +5,64 @@ export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
   email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const sessions = sqliteTable('sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  token: text('token').notNull().unique(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const rooms = sqliteTable('rooms', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  code: text('code').notNull().unique(),
+  hostId: integer('host_id')
+    .notNull()
+    .references(() => users.id),
+  challenge: integer('challenge').notNull().default(1),
+  status: text('status').notNull().default('waiting'), // waiting, playing, finished
+  player1Id: integer('player1_id').references(() => users.id),
+  player2Id: integer('player2_id').references(() => users.id),
+  player1Ready: integer('player1_ready', { mode: 'boolean' }).notNull().default(false),
+  player2Ready: integer('player2_ready', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const roomSpectators = sqliteTable('room_spectators', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  roomId: integer('room_id')
+    .notNull()
+    .references(() => rooms.id),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  joinedAt: integer('joined_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const chatMessages = sqliteTable('chat_messages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  roomId: integer('room_id')
+    .notNull()
+    .references(() => rooms.id),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  message: text('message').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
