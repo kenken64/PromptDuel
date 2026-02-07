@@ -76,9 +76,9 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
   };
 
   return (
-    <div>
+    <div className="font-['Press_Start_2P']">
       {/* Filter Buttons - outside NES container to avoid title overlap blocking clicks */}
-      <div className="flex gap-2 mb-4 flex-wrap" style={{ position: 'relative', zIndex: 2 }}>
+      <div className="flex gap-2 mb-4 flex-wrap animate-fade-in" style={{ position: 'relative', zIndex: 2 }}>
         <button
           type="button"
           onClick={() => setFilter('all')}
@@ -115,19 +115,22 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
         )}
       </div>
 
-      <div className="nes-container is-dark with-title">
+      <div className="nes-container is-dark with-title glow-primary animate-fade-in animate-delay-1">
         <p className="title" style={{ fontSize: 'clamp(0.7rem, 3vw, 1rem)' }}>
+          <i className="nes-icon trophy is-small trophy-bounce" style={{ marginRight: '8px' }}></i>
           Leaderboard {filter !== 'all' ? `- Challenge ${filter}` : ''}
         </p>
 
         {/* Leaderboard Table */}
         {loading ? (
-          <div className="text-center" style={{ padding: '2rem' }}>
-            <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>Loading...</p>
+          <div className="loading-container" style={{ padding: '2rem', minHeight: 'auto' }}>
+            <i className="nes-icon trophy is-medium trophy-bounce"></i>
+            <p className="loading-text" style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>Loading...</p>
           </div>
         ) : entries.length === 0 ? (
           <div className="text-center" style={{ padding: '2rem' }}>
-            <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', opacity: 0.7 }}>
+            <i className="nes-icon star is-medium" style={{ opacity: 0.3 }}></i>
+            <p className="text-muted mt-4" style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>
               No entries yet. Be the first to compete!
             </p>
           </div>

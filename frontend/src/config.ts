@@ -8,4 +8,7 @@ export const config = {
 
   // Claude Code WebSocket server URL
   wsUrl: import.meta.env.VITE_WS_URL || 'ws://localhost:3001',
+
+  // Room WebSocket URL (same as backend, different path)
+  roomWsUrl: import.meta.env.VITE_ROOM_WS_URL || 'ws://localhost:3000/ws/room',
 };
