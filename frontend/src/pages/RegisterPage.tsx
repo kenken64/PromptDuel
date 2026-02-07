@@ -55,27 +55,40 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#212529] flex items-center justify-center p-4 font-['Press_Start_2P']">
-      <div className="nes-container is-dark with-title max-w-md w-full">
-        <p className="title">Create Account</p>
+    <div className="page-container flex items-center justify-center p-4 font-['Press_Start_2P']">
+      <div className="bg-pattern"></div>
 
-        <div className="nes-field is-inline mb-6 text-center w-full">
-          <i className="nes-icon star is-large"></i>
+      <div className="nes-container is-dark max-w-md w-full animate-fade-in glow-secondary">
+        <div className="text-center mb-6">
+          <h1 style={{ fontSize: '1.2rem', color: '#209cee', marginBottom: '24px' }}>Create Account</h1>
+          <div style={{
+            backgroundColor: '#000',
+            padding: '16px',
+            borderRadius: '8px',
+            display: 'inline-block',
+            border: '2px solid #333'
+          }}>
+            <img src="/logo.png" alt="Prompt Duel" style={{ height: '120px', width: 'auto', display: 'block' }} />
+          </div>
         </div>
 
         <div className="mb-6 text-center">
-          <p className="text-xs text-gray-400">Join the arena and compete!</p>
+          <p className="text-[#209cee] glow-text">Join the Arena!</p>
+          <p className="text-xs text-gray-400 mt-2">Create your account to compete</p>
         </div>
 
         {error && (
-          <div className="nes-container is-rounded is-error mb-4">
-            <p className="text-xs">{error}</p>
+          <div
+            className="nes-container is-rounded mb-4 animate-fade-in"
+            style={{ borderColor: '#e76e55', background: 'rgba(231, 110, 85, 0.1)' }}
+          >
+            <p className="text-xs" style={{ color: '#e76e55' }}>{error}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div className="nes-field mb-4">
-            <label htmlFor="username_field">Username</label>
+            <label htmlFor="username_field" className="text-gray-300 mb-2 block">Username</label>
             <input
               type="text"
               id="username_field"
@@ -90,7 +103,7 @@ export function RegisterPage() {
           </div>
 
           <div className="nes-field mb-4">
-            <label htmlFor="email_field">Email</label>
+            <label htmlFor="email_field" className="text-gray-300 mb-2 block">Email</label>
             <input
               type="email"
               id="email_field"
@@ -104,7 +117,7 @@ export function RegisterPage() {
           </div>
 
           <div className="nes-field mb-4">
-            <label htmlFor="password_field">Password</label>
+            <label htmlFor="password_field" className="text-gray-300 mb-2 block">Password</label>
             <input
               type="password"
               id="password_field"
@@ -118,7 +131,7 @@ export function RegisterPage() {
           </div>
 
           <div className="nes-field mb-6">
-            <label htmlFor="confirm_password_field">Confirm Password</label>
+            <label htmlFor="confirm_password_field" className="text-gray-300 mb-2 block">Confirm Password</label>
             <input
               type="password"
               id="confirm_password_field"
@@ -146,9 +159,9 @@ export function RegisterPage() {
           </div>
         </form>
 
-        <div className="mt-6 text-center">
-          <Link to="/" className="text-xs text-gray-400 hover:text-white">
-            Back to Home
+        <div className="mt-8 pt-6 border-t border-gray-700 text-center">
+          <Link to="/" className="text-xs text-gray-400 hover:text-[#209cee] transition-colors">
+            &lt; Back to Home
           </Link>
         </div>
       </div>

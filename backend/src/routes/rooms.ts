@@ -1,8 +1,8 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../db';
-import { rooms, roomSpectators, users } from '../db/schema';
-import { eq, and, ne } from 'drizzle-orm';
-import { requireAuth } from '../middleware/auth';
+import { rooms, roomSpectators, users, sessions } from '../db/schema';
+import { eq, and, ne, lt } from 'drizzle-orm';
+import { authPlugin, getUserFromToken } from '../middleware/auth';
 
 // Generate a random 6-character room code
 function generateRoomCode(): string {
@@ -14,10 +14,57 @@ function generateRoomCode(): string {
   return code;
 }
 
+// Clean up stale rooms (where host has no valid session)
+async function cleanupStaleRooms() {
+  try {
+    // Get all non-finished rooms
+    const activeRooms = await db
+      .select()
+      .from(rooms)
+      .where(ne(rooms.status, 'finished'));
+
+    const now = new Date();
+
+    for (const room of activeRooms) {
+      // Check if host has a valid session
+      const [validSession] = await db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.userId, room.hostId), lt(now, sessions.expiresAt)))
+        .limit(1);
+
+      if (!validSession) {
+        // Host has no valid session, clean up room
+        if (room.status === 'waiting') {
+          // Delete waiting rooms
+          await db.delete(roomSpectators).where(eq(roomSpectators.roomId, room.id));
+          await db.delete(rooms).where(eq(rooms.id, room.id));
+          console.log(`Cleaned up stale waiting room: ${room.code}`);
+        } else if (room.status === 'playing') {
+          // Mark playing rooms as finished
+          await db.update(rooms).set({ status: 'finished' }).where(eq(rooms.id, room.id));
+          console.log(`Marked stale playing room as finished: ${room.code}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up stale rooms:', error);
+  }
+}
+
 export const roomRoutes = new Elysia({ prefix: '/rooms' })
-  .use(requireAuth)
+  .use(authPlugin)
   // List available rooms (waiting and playing status - spectators can join playing games)
-  .get('/', async () => {
+  .get('/', async ({ bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // Clean up stale rooms before listing
+    await cleanupStaleRooms();
+
     const availableRooms = await db
       .select({
         id: rooms.id,
@@ -80,7 +127,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
   // Create a new room
   .post(
     '/',
-    async ({ body, user }) => {
+    async ({ body, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
       const { challenge } = body;
 
       // Generate unique room code
@@ -125,7 +178,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     }
   )
   // Get room details
-  .get('/:code', async ({ params, set }) => {
+  .get('/:code', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -184,7 +243,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     };
   })
   // Join room as player
-  .post('/:code/join', async ({ params, user, set }) => {
+  .post('/:code/join', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -228,7 +293,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     return { success: true, role: 'player' };
   })
   // Join room as spectator
-  .post('/:code/spectate', async ({ params, user, set }) => {
+  .post('/:code/spectate', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -268,7 +339,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     return { success: true, role: 'spectator' };
   })
   // Toggle ready status
-  .post('/:code/ready', async ({ params, user, set }) => {
+  .post('/:code/ready', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -304,14 +381,48 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
       .where(eq(rooms.id, room.id))
       .limit(1);
 
+    // Get player details
+    const [player1] = updatedRoom.player1Id
+      ? await db
+          .select({ id: users.id, username: users.username })
+          .from(users)
+          .where(eq(users.id, updatedRoom.player1Id))
+          .limit(1)
+      : [null];
+
+    const [player2] = updatedRoom.player2Id
+      ? await db
+          .select({ id: users.id, username: users.username })
+          .from(users)
+          .where(eq(users.id, updatedRoom.player2Id))
+          .limit(1)
+      : [null];
+
     return {
       success: true,
       player1Ready: updatedRoom.player1Ready,
       player2Ready: updatedRoom.player2Ready,
+      room: {
+        id: updatedRoom.id,
+        code: updatedRoom.code,
+        challenge: updatedRoom.challenge,
+        status: updatedRoom.status,
+        hostId: updatedRoom.hostId,
+        player1,
+        player2,
+        player1Ready: updatedRoom.player1Ready,
+        player2Ready: updatedRoom.player2Ready,
+      },
     };
   })
   // Start game (host only)
-  .post('/:code/start', async ({ params, user, set }) => {
+  .post('/:code/start', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -346,7 +457,13 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     return { success: true, status: 'playing' };
   })
   // Leave room
-  .post('/:code/leave', async ({ params, user, set }) => {
+  .post('/:code/leave', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)
@@ -367,9 +484,10 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
 
     // If player, handle differently
     if (room.player1Id === user.id) {
-      // Host leaving - if game hasn't started, promote player2 to host or delete room
+      // Host/Player1 leaving
       if (room.status === 'waiting') {
         if (room.player2Id) {
+          // Promote player2 to host
           await db
             .update(rooms)
             .set({
@@ -382,8 +500,15 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
             .where(eq(rooms.id, room.id));
         } else {
           // No player2, delete room
+          await db.delete(roomSpectators).where(eq(roomSpectators.roomId, room.id));
           await db.delete(rooms).where(eq(rooms.id, room.id));
         }
+      } else if (room.status === 'playing') {
+        // Player leaves during game - mark as finished
+        await db
+          .update(rooms)
+          .set({ status: 'finished' })
+          .where(eq(rooms.id, room.id));
       }
     } else if (room.player2Id === user.id) {
       if (room.status === 'waiting') {
@@ -391,13 +516,25 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
           .update(rooms)
           .set({ player2Id: null, player2Ready: false })
           .where(eq(rooms.id, room.id));
+      } else if (room.status === 'playing') {
+        // Player leaves during game - mark as finished
+        await db
+          .update(rooms)
+          .set({ status: 'finished' })
+          .where(eq(rooms.id, room.id));
       }
     }
 
     return { success: true };
   })
   // Delete room (host only)
-  .delete('/:code', async ({ params, user, set }) => {
+  .delete('/:code', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
     const [room] = await db
       .select()
       .from(rooms)

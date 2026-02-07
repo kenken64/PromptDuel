@@ -3,12 +3,15 @@ import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { RoomProvider } from './contexts/RoomContext';
 import { GameProvider } from './contexts/GameContext';
+import { SupabaseChatProvider } from './contexts/SupabaseChatContext';
+import { SupabaseGameProvider } from './contexts/SupabaseGameContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Pages
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { AboutPage } from './pages/AboutPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { WaitingRoom } from './pages/WaitingRoom';
 import { GamePage } from './pages/GamePage';
@@ -20,9 +23,13 @@ function AppLayout() {
   return (
     <AuthProvider>
       <RoomProvider>
-        <GameProvider>
-          <Outlet />
-        </GameProvider>
+        <SupabaseChatProvider>
+          <SupabaseGameProvider>
+            <GameProvider>
+              <Outlet />
+            </GameProvider>
+          </SupabaseGameProvider>
+        </SupabaseChatProvider>
       </RoomProvider>
     </AuthProvider>
   );
@@ -53,6 +60,10 @@ const router = createBrowserRouter([
       {
         path: '/register',
         element: <RegisterPage />,
+      },
+      {
+        path: '/about',
+        element: <AboutPage />,
       },
       // Protected routes
       {

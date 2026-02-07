@@ -23,7 +23,7 @@ interface Message {
 export function SpectatorView() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { room, chatMessages, sendChatMessage, leaveRoom, connectToRoom, disconnectFromRoom } =
     useRoom();
 
@@ -277,7 +277,7 @@ export function SpectatorView() {
   };
 
   const handleLeave = async () => {
-    await leaveRoom();
+    await leaveRoom(code);
     navigate('/lobby');
   };
 
@@ -285,59 +285,65 @@ export function SpectatorView() {
 
   if (isLoadingRoom) {
     return (
-      <div className="min-h-screen bg-[#212529] flex items-center justify-center font-['Press_Start_2P']">
-        <div className="nes-container is-dark text-center">
-          <i className="nes-icon trophy is-large animate-pulse"></i>
-          <p className="mt-4">Connecting to game...</p>
+      <div className="page-container flex items-center justify-center font-['Press_Start_2P']">
+        <div className="bg-pattern"></div>
+        <div className="loading-container">
+          <i className="nes-icon trophy is-large trophy-bounce"></i>
+          <p className="loading-text text-sm">Connecting to game...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#212529] font-['Press_Start_2P']">
+    <div className="page-container font-['Press_Start_2P']">
+      <div className="bg-pattern"></div>
+
       {/* Header */}
-      <div className="bg-black p-4 border-b-4 border-[#92cc41]">
+      <header className="app-header p-4">
         <div className="container mx-auto flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <i className="nes-icon trophy is-medium"></i>
+          <div className="flex items-center gap-4 animate-fade-in">
+            <i className="nes-icon trophy is-medium trophy-bounce"></i>
             <div>
-              <h1 className="text-lg">Spectating: {code}</h1>
+              <h1 className="text-lg text-primary glow-text">Spectating: {code}</h1>
               <p className="text-xs text-[#92cc41]">
                 Challenge {room?.challenge || 1} - Live View
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 animate-fade-in animate-delay-1">
             <div className="nes-badge">
               <span className="is-warning">SPECTATOR</span>
             </div>
             <Timer timeLeft={timeLeft} isActive={isActive} />
+            <span style={{ fontSize: '0.7rem', color: '#888' }}>
+              Watching as <span style={{ color: '#92cc41' }}>{user?.username}</span>
+            </span>
             <button onClick={handleLeave} className="nes-btn is-error text-xs">
               Leave
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-6">
+      <main className="page-content">
         {/* Game Status */}
         {isFinished ? (
-          <div className="text-center mb-6">
-            <div className="nes-container is-dark is-rounded inline-block">
-              <p className="text-[#92cc41]">Game Finished!</p>
+          <div className="text-center mb-6 animate-fade-in">
+            <div className="nes-container is-dark is-rounded inline-block glow-primary">
+              <p className="text-[#92cc41] glow-text">Game Finished!</p>
             </div>
           </div>
         ) : !isActive ? (
-          <div className="text-center mb-6">
+          <div className="text-center mb-6 animate-fade-in">
             <div className="nes-container is-dark is-rounded inline-block">
-              <p className="text-yellow-400">Waiting for game to start...</p>
+              <p className="text-yellow-400 loading-text">Waiting for game to start...</p>
             </div>
           </div>
         ) : (
-          <div className="text-center mb-6">
-            <div className="nes-container is-dark is-rounded inline-block">
+          <div className="text-center mb-6 animate-fade-in">
+            <div className="nes-container is-dark is-rounded inline-block glow-secondary">
               <p className="text-[#92cc41]">
                 {currentTurn === 'player1' ? player1.name : player2.name}'s turn
               </p>
@@ -346,11 +352,11 @@ export function SpectatorView() {
         )}
 
         {/* Score Display */}
-        <div className="nes-container is-dark mb-6">
+        <div className="nes-container is-dark mb-6 glow-primary animate-fade-in animate-delay-2">
           <div className="flex items-center justify-center gap-8 flex-wrap">
-            <div className="text-center">
+            <div className="text-center animate-slide-left">
               <p className="text-xs mb-2">{player1.name}</p>
-              <p className="text-2xl text-[#209cee]">
+              <p className="text-2xl text-[#209cee] glow-text">
                 {getFinalScore(player1.score, player1.promptsUsed)}
               </p>
               <p className="text-xs text-gray-500">
@@ -361,11 +367,11 @@ export function SpectatorView() {
               </p>
             </div>
 
-            <div className="text-2xl opacity-50">VS</div>
+            <div className="vs-divider text-2xl">VS</div>
 
-            <div className="text-center">
+            <div className="text-center animate-slide-right">
               <p className="text-xs mb-2">{player2.name}</p>
-              <p className="text-2xl text-[#92cc41]">
+              <p className="text-2xl text-[#92cc41] glow-text">
                 {getFinalScore(player2.score, player2.promptsUsed)}
               </p>
               <p className="text-xs text-gray-500">
@@ -380,7 +386,7 @@ export function SpectatorView() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Terminal Output */}
-          <div className="nes-container is-dark with-title">
+          <div className="nes-container is-dark with-title animate-fade-in animate-delay-3">
             <p className="title">Terminal Output</p>
 
             {/* Player Tabs */}
@@ -400,50 +406,50 @@ export function SpectatorView() {
             </div>
 
             {/* Console Output */}
-            <div
-              ref={consoleRef}
-              className="h-80 overflow-y-auto p-3 font-mono text-xs"
-              style={{
-                backgroundColor: '#0d1117',
-                border: '2px solid #30363d',
-                borderRadius: '4px',
-              }}
-            >
-              {currentConsole.length === 0 ? (
-                <p className="text-gray-500">Waiting for terminal output...</p>
-              ) : (
-                currentConsole.map((line, idx) => (
-                  <pre
-                    key={idx}
-                    className="whitespace-pre-wrap text-green-400"
-                    dangerouslySetInnerHTML={{
-                      __html: line
-                        .replace(/\x1b\[[0-9;]*m/g, '') // Strip ANSI codes for display
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;'),
-                    }}
-                  />
-                ))
-              )}
+            <div className="terminal-window">
+              <div className="terminal-header">
+                <span className="dot red"></span>
+                <span className="dot yellow"></span>
+                <span className="dot green"></span>
+                <span className="text-xs text-gray-400 ml-2">{activeTab === 'player1' ? player1.name : player2.name}'s terminal</span>
+              </div>
+              <div
+                ref={consoleRef}
+                className="terminal-content h-64"
+              >
+                {currentConsole.length === 0 ? (
+                  <p className="text-gray-500">Waiting for terminal output...</p>
+                ) : (
+                  currentConsole.map((line, idx) => (
+                    <pre
+                      key={idx}
+                      className="whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{
+                        __html: line
+                          .replace(/\x1b\[[0-9;]*m/g, '')
+                          .replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;'),
+                      }}
+                    />
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
           {/* Chat Section */}
-          <div className="nes-container is-dark with-title">
+          <div className="nes-container is-dark with-title animate-fade-in animate-delay-4">
             <p className="title">Chat</p>
 
-            <div
-              className="h-64 overflow-y-auto mb-4 p-2"
-              style={{ backgroundColor: '#1a1a1a' }}
-            >
+            <div className="chat-container mb-4 p-2">
               {chatMessages.length === 0 ? (
                 <p className="text-xs text-gray-500 text-center py-4">
                   No messages yet. Chat with other spectators!
                 </p>
               ) : (
                 chatMessages.map((msg, idx) => (
-                  <div key={msg.id || idx} className="mb-2 text-xs">
-                    <span className="text-[#92cc41]">{msg.username}: </span>
+                  <div key={msg.id || idx} className="chat-message">
+                    <span className="username">{msg.username}: </span>
                     <span className="text-gray-300">{msg.message}</span>
                   </div>
                 ))
@@ -473,7 +479,7 @@ export function SpectatorView() {
             <p className="title">Game Log</p>
             <div className="h-32 overflow-y-auto">
               {gameMessages.map((msg, idx) => (
-                <div key={idx} className="text-xs mb-1">
+                <div key={idx} className="chat-message text-xs">
                   <span
                     className={
                       msg.type === 'judge'
@@ -491,7 +497,7 @@ export function SpectatorView() {
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

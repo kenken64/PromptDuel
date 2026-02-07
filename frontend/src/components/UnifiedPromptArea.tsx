@@ -22,6 +22,7 @@ interface UnifiedPromptAreaProps {
   player1Processing?: boolean;
   player2Processing?: boolean;
   readOnly?: boolean;
+  currentUserPlayer?: Player | null; // Which player the current user is
 }
 
 export function UnifiedPromptArea({
@@ -35,9 +36,13 @@ export function UnifiedPromptArea({
   player1Processing = false,
   player2Processing = false,
   readOnly = false,
+  currentUserPlayer = null,
 }: UnifiedPromptAreaProps) {
   const isProcessing = player1Processing || player2Processing;
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
+
+  // Can only edit if it's your turn (currentUserPlayer matches currentTurn)
+  const canEdit = !readOnly && currentUserPlayer === currentTurn;
   const isPlayer1Turn = currentTurn === 'player1';
   const charsLeft = MAX_PROMPT_CHARS - currentPlayer.prompt.length;
   const isOverLimit = charsLeft < 0;
@@ -142,7 +147,7 @@ export function UnifiedPromptArea({
           <textarea
             value={currentPlayer.prompt}
             onChange={(e) => onPromptChange(currentTurn, e.target.value)}
-            disabled={readOnly || !isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
+            disabled={!canEdit || !isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
             maxLength={MAX_PROMPT_CHARS + 50}
             className="nes-textarea"
             style={{
@@ -154,11 +159,13 @@ export function UnifiedPromptArea({
             placeholder={
               !isActive
                 ? 'Waiting to start...'
-                : currentPlayer.hasEnded
-                  ? "You've ended your prompts!"
-                  : currentPlayer.promptsUsed >= MAX_PROMPTS
-                    ? "You've used all your prompts!"
-                    : `Write your prompt here... (max ${MAX_PROMPT_CHARS} chars)`
+                : !canEdit && currentUserPlayer
+                  ? `Waiting for ${currentPlayer.name}'s turn...`
+                  : currentPlayer.hasEnded
+                    ? "You've ended your prompts!"
+                    : currentPlayer.promptsUsed >= MAX_PROMPTS
+                      ? "You've used all your prompts!"
+                      : `Write your prompt here... (max ${MAX_PROMPT_CHARS} chars)`
             }
           />
         </div>
@@ -203,7 +210,7 @@ export function UnifiedPromptArea({
       <button
         onClick={() => onSubmit(currentTurn)}
         disabled={
-          readOnly ||
+          !canEdit ||
           !isActive ||
           !currentPlayer.prompt.trim() ||
           isOverLimit ||
@@ -219,14 +226,14 @@ export function UnifiedPromptArea({
           marginBottom: '0.5rem',
           fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
           minHeight: '44px',
-          opacity: isProcessing ? 0.5 : 1,
+          opacity: isProcessing || !canEdit ? 0.5 : 1,
         }}
       >
-        {isProcessing ? '⏳ Claude is working...' : currentPlayer.hasEnded ? '✗ Ended' : currentPlayer.isReady ? '✓ Submitted!' : '→ Submit Prompt'}
+        {isProcessing ? '⏳ Claude is working...' : !canEdit && currentUserPlayer ? `⏳ ${currentPlayer.name}'s Turn` : currentPlayer.hasEnded ? '✗ Ended' : currentPlayer.isReady ? '✓ Submitted!' : '→ Submit Prompt'}
       </button>
 
-      {/* End Prompts Early Button */}
-      {!readOnly && isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
+      {/* End Prompts Early Button - only show when it's your turn */}
+      {canEdit && isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
         <button
           onClick={() => onEndPrompts(currentTurn)}
           disabled={isProcessing}

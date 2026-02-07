@@ -12,6 +12,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Debug: log auth state
+  console.log('Auth state:', { isAuthenticated, user });
+
   const handleChallengeSelect = (challenge: 1 | 2) => {
     if (isAuthenticated) {
       navigate('/lobby');
@@ -21,359 +24,571 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
     onSelectChallenge?.(challenge);
   };
 
+  const handleGetStarted = () => {
+    if (isAuthenticated) {
+      navigate('/lobby');
+    } else {
+      navigate('/register');
+    }
+  };
+
   return (
     <div
       style={{
         minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-        backgroundColor: '#212529',
-        background: 'radial-gradient(ellipse at center, #2a2f35 0%, #212529 70%)',
+        backgroundColor: '#0a0a12',
+        color: '#fff',
+        fontFamily: "'Press Start 2P', cursive",
       }}
     >
-      {/* Auth Buttons - Top Right */}
-      <div
+      {/* Navigation */}
+      <nav
         style={{
-          position: 'absolute',
-          top: '1rem',
-          right: '1rem',
-          display: 'flex',
-          gap: '0.5rem',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          backgroundColor: 'rgba(10, 10, 18, 0.95)',
+          borderBottom: '1px solid #1a1a2e',
+          backdropFilter: 'blur(8px)',
         }}
       >
-        {isAuthenticated ? (
-          <>
-            <span
-              style={{
-                color: '#92cc41',
-                fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
-                marginRight: '0.5rem',
-                alignSelf: 'center',
-              }}
-            >
-              {user?.username}
-            </span>
-            <Link to="/lobby" className="nes-btn is-success" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
-              Lobby
-            </Link>
-            <button
-              onClick={() => logout()}
-              className="nes-btn is-error"
-              style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}
-            >
-              Logout
-            </button>
-          </>
-        ) : (
-          <>
-            <Link to="/login" className="nes-btn is-primary" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
-              Login
-            </Link>
-            <Link to="/register" className="nes-btn is-success" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)' }}>
-              Register
-            </Link>
-          </>
-        )}
-      </div>
-
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-        <h1
+        <div
           style={{
-            fontSize: 'clamp(1.8rem, 8vw, 3.5rem)',
-            color: '#fff',
-            textShadow: '4px 4px 0 #000, 6px 6px 0 #92cc41',
-            letterSpacing: '0.1em',
-            margin: 0,
+            maxWidth: '1200px',
+            margin: '0 auto',
+            padding: '0 1.5rem',
+            height: '100px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
           }}
         >
-          PROMPT DUEL
-        </h1>
-      </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <img
+              src="/logo.png"
+              alt="Prompt Duel"
+              style={{
+                height: '80px',
+                width: 'auto',
+              }}
+            />
+            <div>
+              <h1 style={{ fontSize: '1.2rem', color: '#92cc41', margin: 0 }}>Prompt Duel</h1>
+              <p style={{ fontSize: '0.5rem', color: '#666', margin: '4px 0 0 0' }}>AI Battle Arena</p>
+            </div>
+          </div>
 
-      {/* Select Your Challenge Label */}
-      <p
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {isAuthenticated ? (
+              <>
+                <span style={{ color: '#888', fontSize: '0.6rem' }}>Welcome, <span style={{ color: '#92cc41' }}>{user?.username}</span></span>
+                <Link to="/lobby" className="nes-btn is-primary" style={{ fontSize: '0.5rem', padding: '8px 12px' }}>
+                  Lobby
+                </Link>
+                <button
+                  onClick={() => logout()}
+                  className="nes-btn"
+                  style={{ fontSize: '0.5rem', padding: '8px 12px' }}
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  style={{
+                    color: '#888',
+                    fontSize: '0.6rem',
+                    textDecoration: 'none',
+                    padding: '8px 12px',
+                  }}
+                >
+                  Login
+                </Link>
+                <Link to="/register" className="nes-btn is-primary" style={{ fontSize: '0.5rem', padding: '8px 12px' }}>
+                  Sign Up
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <section
         style={{
-          fontSize: 'clamp(0.7rem, 2.5vw, 1rem)',
-          color: '#92cc41',
-          textShadow: '2px 2px 0 #000',
-          marginBottom: '2rem',
+          paddingTop: '160px',
+          paddingBottom: '80px',
+          paddingLeft: '1.5rem',
+          paddingRight: '1.5rem',
           textAlign: 'center',
         }}
       >
-        Select Your Challenge
-      </p>
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <div
+            style={{
+              display: 'inline-block',
+              marginBottom: '24px',
+              padding: '8px 16px',
+              backgroundColor: 'rgba(146, 204, 65, 0.1)',
+              border: '1px solid rgba(146, 204, 65, 0.3)',
+              color: '#92cc41',
+              fontSize: '0.7rem',
+            }}
+          >
+            Competitive AI Prompt Engineering
+          </div>
 
-      {/* Challenge Selection - Side by Side */}
-      <div
+          <h1
+            style={{
+              fontSize: 'clamp(1.5rem, 6vw, 3rem)',
+              marginBottom: '24px',
+              lineHeight: '1.4',
+              fontWeight: 'normal',
+            }}
+          >
+            Master the Art of
+            <span style={{ display: 'block', color: '#92cc41', marginTop: '12px' }}>Prompt Engineering</span>
+          </h1>
+
+          <p
+            style={{
+              color: '#888',
+              fontSize: 'clamp(0.6rem, 2.5vw, 0.9rem)',
+              maxWidth: '700px',
+              margin: '0 auto 48px',
+              lineHeight: '2',
+            }}
+          >
+            Challenge your friends in real-time prompt battles. Craft the perfect prompts, outsmart your opponent, and
+            climb the leaderboard.
+          </p>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '16px',
+              justifyContent: 'center',
+            }}
+          >
+            <button
+              onClick={handleGetStarted}
+              className="nes-btn is-success"
+              style={{ fontSize: '0.75rem', padding: '16px 32px' }}
+            >
+              {isAuthenticated ? 'Enter Lobby' : 'Get Started Free'}
+            </button>
+            <button
+              onClick={() => setShowLeaderboard(true)}
+              className="nes-btn"
+              style={{ fontSize: '0.75rem', padding: '16px 32px' }}
+            >
+              View Leaderboard
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section
         style={{
-          display: 'flex',
-          flexDirection: 'row',
-          gap: '2rem',
-          width: '100%',
-          maxWidth: '850px',
-          padding: '0 1rem',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
+          padding: '80px 1.5rem',
+          backgroundColor: '#0d0d18',
         }}
       >
-        {/* Challenge 1 */}
-        <div
-          onClick={() => handleChallengeSelect(1)}
-          style={{
-            background: 'linear-gradient(180deg, #1a1d21 0%, #0d0f11 100%)',
-            border: '4px solid #209cee',
-            boxShadow: '0 0 20px rgba(32, 156, 238, 0.3), inset 0 0 20px rgba(32, 156, 238, 0.1)',
-            padding: '2rem',
-            position: 'relative',
-            overflow: 'hidden',
-            cursor: 'pointer',
-            transition: 'transform 0.2s',
-            flex: '1 1 300px',
-            maxWidth: '400px',
-            minWidth: '280px',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          {/* Top glow */}
-          <div
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)', textAlign: 'center', marginBottom: '16px' }}>
+            How It Works
+          </h2>
+          <p
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '2px',
-              background: 'linear-gradient(90deg, transparent, #209cee, transparent)',
-            }}
-          />
-
-          {/* Vertical content */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
+              color: '#666',
+              fontSize: '0.7rem',
               textAlign: 'center',
+              marginBottom: '48px',
             }}
           >
-            {/* Icon */}
-            <div
-              style={{
-                width: '90px',
-                height: '90px',
-                background: 'rgba(32, 156, 238, 0.15)',
-                borderRadius: '50%',
-                border: '3px solid #209cee',
-                marginBottom: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              <i
-                className="nes-icon star is-large"
-                style={{
-                  transform: 'scale(2)',
-                  margin: 0,
-                  position: 'relative',
-                  top: '-8px',
-                  left: '-8px',
-                }}
-              ></i>
-            </div>
+            Three simple steps to start competing
+          </p>
 
-            {/* Title */}
-            <h2
-              style={{
-                fontSize: 'clamp(1.1rem, 4vw, 1.5rem)',
-                color: '#209cee',
-                textShadow: '2px 2px 0 #000',
-                marginBottom: '0.5rem',
-                margin: '0 0 0.5rem 0',
-              }}
-            >
-              Challenge 1
-            </h2>
-
-            {/* Description */}
-            <p
-              style={{
-                fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
-                color: '#888',
-                marginBottom: '1rem',
-                margin: '0 0 1rem 0',
-              }}
-            >
-              Creative Prompting
-            </p>
-
-            {/* Badge */}
-            <div
-              style={{
-                background: '#209cee',
-                color: '#000',
-                padding: '0.4rem 1.2rem',
-                fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)',
-                fontWeight: 'bold',
-                letterSpacing: '0.1em',
-              }}
-            >
-              BEGINNER
-            </div>
-          </div>
-
-          {/* Bottom glow */}
           <div
             style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: '2px',
-              background: 'linear-gradient(90deg, transparent, #209cee, transparent)',
-            }}
-          />
-        </div>
-
-        {/* Challenge 2 */}
-        <div
-          onClick={() => handleChallengeSelect(2)}
-          style={{
-            background: 'linear-gradient(180deg, #1a1d21 0%, #0d0f11 100%)',
-            border: '4px solid #92cc41',
-            boxShadow: '0 0 20px rgba(146, 204, 65, 0.3), inset 0 0 20px rgba(146, 204, 65, 0.1)',
-            padding: '2rem',
-            position: 'relative',
-            overflow: 'hidden',
-            cursor: 'pointer',
-            transition: 'transform 0.2s',
-            flex: '1 1 300px',
-            maxWidth: '400px',
-            minWidth: '280px',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          {/* Top glow */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '2px',
-              background: 'linear-gradient(90deg, transparent, #92cc41, transparent)',
-            }}
-          />
-
-          {/* Vertical content */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: '32px',
             }}
           >
-            {/* Icon */}
-            <div
-              style={{
-                width: '90px',
-                height: '90px',
-                background: 'rgba(146, 204, 65, 0.15)',
-                borderRadius: '50%',
-                border: '3px solid #92cc41',
-                marginBottom: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              <i
-                className="nes-icon trophy is-large"
+            {/* Step 1 */}
+            <div style={{ textAlign: 'center', padding: '24px' }}>
+              <div
                 style={{
-                  transform: 'scale(2)',
-                  margin: 0,
-                  position: 'relative',
-                  top: '-8px',
-                  left: '-8px',
+                  width: '48px',
+                  height: '48px',
+                  backgroundColor: 'rgba(32, 156, 238, 0.15)',
+                  border: '2px solid #209cee',
+                  margin: '0 auto 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
-              ></i>
+              >
+                <span style={{ color: '#209cee', fontSize: '1rem' }}>1</span>
+              </div>
+              <h3 style={{ color: '#209cee', fontSize: '0.85rem', marginBottom: '12px' }}>Create or Join</h3>
+              <p style={{ color: '#666', fontSize: '0.65rem', lineHeight: '1.8' }}>
+                Create a room or join an existing one with a simple room code
+              </p>
             </div>
 
-            {/* Title */}
-            <h2
-              style={{
-                fontSize: 'clamp(1.1rem, 4vw, 1.5rem)',
-                color: '#92cc41',
-                textShadow: '2px 2px 0 #000',
-                margin: '0 0 0.5rem 0',
-              }}
-            >
-              Challenge 2
-            </h2>
+            {/* Step 2 */}
+            <div style={{ textAlign: 'center', padding: '24px' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  backgroundColor: 'rgba(146, 204, 65, 0.15)',
+                  border: '2px solid #92cc41',
+                  margin: '0 auto 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span style={{ color: '#92cc41', fontSize: '1rem' }}>2</span>
+              </div>
+              <h3 style={{ color: '#92cc41', fontSize: '0.85rem', marginBottom: '12px' }}>Battle</h3>
+              <p style={{ color: '#666', fontSize: '0.65rem', lineHeight: '1.8' }}>
+                Take turns crafting prompts for Claude Code in real-time
+              </p>
+            </div>
 
-            {/* Description */}
-            <p
-              style={{
-                fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
-                color: '#888',
-                margin: '0 0 1rem 0',
-              }}
-            >
-              Advanced Battle
-            </p>
-
-            {/* Badge */}
-            <div
-              style={{
-                background: '#92cc41',
-                color: '#000',
-                padding: '0.4rem 1.2rem',
-                fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)',
-                fontWeight: 'bold',
-                letterSpacing: '0.1em',
-              }}
-            >
-              ADVANCED
+            {/* Step 3 */}
+            <div style={{ textAlign: 'center', padding: '24px' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  backgroundColor: 'rgba(247, 213, 29, 0.15)',
+                  border: '2px solid #f7d51d',
+                  margin: '0 auto 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span style={{ color: '#f7d51d', fontSize: '1rem' }}>3</span>
+              </div>
+              <h3 style={{ color: '#f7d51d', fontSize: '0.85rem', marginBottom: '12px' }}>Win</h3>
+              <p style={{ color: '#666', fontSize: '0.65rem', lineHeight: '1.8' }}>
+                Complete the challenge with fewer prompts to earn the highest score
+              </p>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* Bottom glow */}
+      {/* Challenges Section */}
+      <section style={{ padding: '80px 1.5rem' }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)', textAlign: 'center', marginBottom: '16px' }}>
+            Choose Your Challenge
+          </h2>
+          <p
+            style={{
+              color: '#666',
+              fontSize: '0.7rem',
+              textAlign: 'center',
+              marginBottom: '48px',
+            }}
+          >
+            Select a difficulty level to start
+          </p>
+
           <div
             style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: '2px',
-              background: 'linear-gradient(90deg, transparent, #92cc41, transparent)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '24px',
+              maxWidth: '700px',
+              margin: '0 auto',
             }}
-          />
-        </div>
-      </div>
+          >
+            {/* Challenge 1 */}
+            <div
+              onClick={() => handleChallengeSelect(1)}
+              style={{
+                backgroundColor: '#0d0d18',
+                border: '2px solid #1a1a2e',
+                padding: '32px',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#209cee';
+                e.currentTarget.style.transform = 'translateY(-4px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#1a1a2e';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  marginBottom: '24px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: 'rgba(32, 156, 238, 0.1)',
+                    border: '1px solid rgba(32, 156, 238, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <i className="nes-icon star is-medium"></i>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.6rem',
+                    backgroundColor: '#209cee',
+                    color: '#000',
+                    padding: '8px 16px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  BEGINNER
+                </span>
+              </div>
 
-      {/* Leaderboard Button */}
-      <div style={{ marginTop: '2rem', textAlign: 'center' }}>
-        <button
-          onClick={() => setShowLeaderboard(!showLeaderboard)}
-          className="nes-btn is-warning"
-          type="button"
+              <h3 style={{ color: '#209cee', fontSize: '1rem', marginBottom: '12px' }}>Challenge 1</h3>
+              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>BracketValidator</p>
+              <p style={{ color: '#888', fontSize: '0.6rem', lineHeight: '1.9' }}>
+                Perfect for newcomers. Learn the basics of prompt engineering with a straightforward coding challenge.
+              </p>
+
+              <div
+                style={{
+                  marginTop: '24px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid #1a1a2e',
+                }}
+              >
+                <span style={{ color: '#555', fontSize: '0.6rem' }}>Click to start →</span>
+              </div>
+            </div>
+
+            {/* Challenge 2 */}
+            <div
+              onClick={() => handleChallengeSelect(2)}
+              style={{
+                backgroundColor: '#0d0d18',
+                border: '2px solid #1a1a2e',
+                padding: '32px',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#92cc41';
+                e.currentTarget.style.transform = 'translateY(-4px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#1a1a2e';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  marginBottom: '24px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    backgroundColor: 'rgba(146, 204, 65, 0.1)',
+                    border: '1px solid rgba(146, 204, 65, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <i className="nes-icon trophy is-medium"></i>
+                </div>
+                <span
+                  style={{
+                    fontSize: '0.6rem',
+                    backgroundColor: '#92cc41',
+                    color: '#000',
+                    padding: '8px 16px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  ADVANCED
+                </span>
+              </div>
+
+              <h3 style={{ color: '#92cc41', fontSize: '1rem', marginBottom: '12px' }}>Challenge 2</h3>
+              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>QuantumHeist</p>
+              <p style={{ color: '#888', fontSize: '0.6rem', lineHeight: '1.9' }}>
+                For experienced prompters. Test your skills with a complex, multi-step coding challenge.
+              </p>
+
+              <div
+                style={{
+                  marginTop: '24px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid #1a1a2e',
+                }}
+              >
+                <span style={{ color: '#555', fontSize: '0.6rem' }}>Click to start →</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section
+        style={{
+          padding: '80px 1.5rem',
+          backgroundColor: '#0d0d18',
+        }}
+      >
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)', textAlign: 'center', marginBottom: '48px' }}>
+            Features
+          </h2>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '24px',
+            }}
+          >
+            <div
+              style={{
+                padding: '24px',
+                border: '1px solid #1a1a2e',
+                backgroundColor: '#0a0a12',
+              }}
+            >
+              <div style={{ fontSize: '1.5rem', marginBottom: '12px' }}>⚡</div>
+              <h3 style={{ fontSize: '0.75rem', marginBottom: '10px' }}>Real-time Battles</h3>
+              <p style={{ color: '#666', fontSize: '0.6rem' }}>Compete live with opponents</p>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                border: '1px solid #1a1a2e',
+                backgroundColor: '#0a0a12',
+              }}
+            >
+              <div style={{ fontSize: '1.5rem', marginBottom: '12px' }}>👁</div>
+              <h3 style={{ fontSize: '0.75rem', marginBottom: '10px' }}>Spectator Mode</h3>
+              <p style={{ color: '#666', fontSize: '0.6rem' }}>Watch and learn from others</p>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                border: '1px solid #1a1a2e',
+                backgroundColor: '#0a0a12',
+              }}
+            >
+              <div style={{ fontSize: '1.5rem', marginBottom: '12px' }}>🏆</div>
+              <h3 style={{ fontSize: '0.75rem', marginBottom: '10px' }}>Leaderboards</h3>
+              <p style={{ color: '#666', fontSize: '0.6rem' }}>Track your ranking globally</p>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                border: '1px solid #1a1a2e',
+                backgroundColor: '#0a0a12',
+              }}
+            >
+              <div style={{ fontSize: '1.5rem', marginBottom: '12px' }}>💬</div>
+              <h3 style={{ fontSize: '0.75rem', marginBottom: '10px' }}>Live Chat</h3>
+              <p style={{ color: '#666', fontSize: '0.6rem' }}>Communicate with players</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section style={{ padding: '80px 1.5rem', textAlign: 'center' }}>
+        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: 'clamp(1.1rem, 4vw, 1.5rem)', marginBottom: '16px' }}>Ready to Compete?</h2>
+          <p style={{ color: '#666', fontSize: '0.7rem', marginBottom: '32px' }}>
+            Join the arena and prove your prompt engineering skills
+          </p>
+          <button
+            onClick={handleGetStarted}
+            className="nes-btn is-success"
+            style={{ fontSize: '0.8rem', padding: '16px 40px' }}
+          >
+            {isAuthenticated ? 'Go to Lobby' : 'Create Free Account'}
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer
+        style={{
+          padding: '32px 1.5rem',
+          borderTop: '1px solid #1a1a2e',
+        }}
+      >
+        <div
           style={{
-            fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
-            padding: '0.6rem 1.5rem',
+            maxWidth: '1000px',
+            margin: '0 auto',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
           }}
         >
-          <i className="nes-icon trophy is-small" style={{ marginRight: '8px' }}></i>
-          {showLeaderboard ? 'Hide Leaderboard' : 'View Leaderboard'}
-        </button>
-      </div>
+          <Link
+            to="/about"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              textDecoration: 'none',
+              transition: 'opacity 0.2s ease',
+            }}
+            title="About Prompt Duel"
+          >
+            <img
+              src="/logo.png"
+              alt="Prompt Duel"
+              style={{
+                height: '50px',
+                width: 'auto',
+              }}
+            />
+            <span style={{ fontSize: '0.8rem', color: '#92cc41' }}>Prompt Duel</span>
+          </Link>
+          <p style={{ color: '#555', fontSize: '0.6rem' }}>Powered by Claude Code</p>
+        </div>
+      </footer>
 
       {/* Leaderboard Modal */}
       {showLeaderboard && (
@@ -384,7 +599,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -395,36 +610,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
             if (e.target === e.currentTarget) setShowLeaderboard(false);
           }}
         >
-          <div style={{ width: '100%', maxWidth: '800px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div style={{ width: '100%', maxWidth: '800px', maxHeight: '85vh', overflowY: 'auto' }}>
             <Leaderboard onClose={() => setShowLeaderboard(false)} />
           </div>
         </div>
       )}
-
-      {/* Footer */}
-      <div style={{ marginTop: '2rem', textAlign: 'center' }}>
-        <p
-          style={{
-            fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)',
-            color: '#555',
-            margin: 0,
-          }}
-        >
-          Choose a challenge to begin your adventure
-        </p>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '0.5rem',
-            marginTop: '0.75rem',
-          }}
-        >
-          <span style={{ color: '#209cee', fontSize: '0.6rem' }}>●</span>
-          <span style={{ color: '#92cc41', fontSize: '0.6rem' }}>●</span>
-          <span style={{ color: '#f7d51d', fontSize: '0.6rem' }}>●</span>
-        </div>
-      </div>
     </div>
   );
 };

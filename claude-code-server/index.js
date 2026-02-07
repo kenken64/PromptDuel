@@ -4,9 +4,14 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import os from 'os';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Load environment variables from .env file
+dotenv.config({ path: resolve(__dirname, '.env') });
+console.log('Loaded .env from:', resolve(__dirname, '.env'));
 
 const PORT = 3001;
 const sessions = new Map();
@@ -322,6 +327,7 @@ wss.on('connection', (ws) => {
             HOME: process.env.HOME || process.env.USERPROFILE,
             // Set git-bash path for Claude Code on Windows
             CLAUDE_CODE_GIT_BASH_PATH: isWindows ? shell : undefined,
+            // Keep normal terminal mode for Claude's interactive UI
           },
         });
 
@@ -338,29 +344,112 @@ wss.on('connection', (ws) => {
                        '\x1b[33mAuto-launching Claude Code...\x1b[0m\r\n\r\n';
         ws.send(JSON.stringify({ type: 'output', data: welcome }));
 
-        // Forward PTY output to WebSocket and detect completion markers
+        // Forward PTY output to WebSocket and detect Claude ready/completion
         ptyProcess.onData((data) => {
           if (ws.readyState === 1) {
             const session = sessions.get(sessionId);
 
-            // Check for completion marker in output
+            // Debug: log all output
+            const debugData = data.replace(/\r/g, '\\r').replace(/\n/g, '\\n').substring(0, 200);
+            console.log(`[${sessionId}] PTY OUTPUT: "${debugData}"${data.length > 200 ? '...' : ''}`);
+
+            // Detect Claude's ready prompt (❯ or >) to know when we can send input
+            // Claude shows this when it's ready for input or done processing
+            // Look for the specific Claude prompt pattern
+            const hasClaudePrompt = data.includes('❯') || data.includes('> ');
+            const hasTryMessage = data.includes('Try "');
+            const isClaudePrompt = hasClaudePrompt || hasTryMessage;
+
+            console.log(`[${sessionId}] DEBUG: hasClaudePrompt=${hasClaudePrompt}, hasTryMessage=${hasTryMessage}, waitingForClaudeReady=${session?.waitingForClaudeReady}, waitingForCompletion=${session?.waitingForCompletion}, outputSeen=${session?.outputSeen}`);
+
+            if (session && session.waitingForClaudeReady && isClaudePrompt) {
+              console.log(`[${sessionId}] >>> Claude is ready, sending pending prompt...`);
+              session.waitingForClaudeReady = false;
+
+              // Send the pending prompt
+              if (session.pendingPrompt) {
+                setTimeout(() => {
+                  session.ptyProcess.write(session.pendingPrompt + '\r');
+                  console.log(`[${sessionId}] >>> Sent prompt: ${session.pendingPrompt.substring(0, 50)}...`);
+                  session.pendingPrompt = null;
+                  session.waitingForCompletion = true;
+                  session.outputSeen = false;
+                  session.promptSentTime = Date.now();
+
+                  // Notify client that processing started
+                  ws.send(JSON.stringify({ type: 'processing-started' }));
+                }, 1000); // Wait a bit longer for Claude to be fully ready
+              }
+            }
+
+            // Detect completion - Claude shows prompt again after finishing work
+            // Only trigger after we've seen substantial output and some time has passed
+            if (session && session.waitingForCompletion && isClaudePrompt && !session.waitingForClaudeReady) {
+              const timeSincePrompt = Date.now() - (session.promptSentTime || 0);
+              console.log(`[${sessionId}] DEBUG completion check: outputSeen=${session.outputSeen}, timeSincePrompt=${timeSincePrompt}ms`);
+
+              // Only trigger if we've seen output AND at least 5 seconds have passed
+              if (session.outputSeen && timeSincePrompt > 5000) {
+                console.log(`[${sessionId}] >>> Claude finished processing (detected prompt after ${timeSincePrompt}ms)`);
+                session.waitingForCompletion = false;
+                session.outputSeen = false;
+
+                // Send completion notification
+                ws.send(JSON.stringify({
+                  type: 'processing-complete',
+                  playerName: session.playerName,
+                  challenge: session.challenge,
+                }));
+              }
+            }
+
+            // Track that we've seen output (Claude is working)
+            // Don't count the prompt itself as output
+            if (session && session.waitingForCompletion && !isClaudePrompt && data.trim().length > 10) {
+              if (!session.outputSeen) {
+                console.log(`[${sessionId}] >>> First substantial output detected`);
+              }
+              session.outputSeen = true;
+              session.lastOutputTime = Date.now();
+
+              // Clear any existing idle timer
+              if (session.idleTimer) {
+                clearTimeout(session.idleTimer);
+              }
+
+              // Set idle timer - if no output for 10 seconds, consider Claude done
+              session.idleTimer = setTimeout(() => {
+                if (session.waitingForCompletion && session.outputSeen) {
+                  const timeSincePrompt = Date.now() - (session.promptSentTime || 0);
+                  console.log(`[${sessionId}] >>> Claude idle for 10s, considering done (total time: ${timeSincePrompt}ms)`);
+                  session.waitingForCompletion = false;
+                  session.outputSeen = false;
+
+                  // Send completion notification
+                  ws.send(JSON.stringify({
+                    type: 'processing-complete',
+                    playerName: session.playerName,
+                    challenge: session.challenge,
+                  }));
+                }
+              }, 10000);
+            }
+
+            // Check for completion marker in output (fallback)
             if (session && session.isProcessing && session.completionMarker) {
               if (data.includes(session.completionMarker)) {
                 console.log(`[${sessionId}] Detected completion marker`);
                 session.isProcessing = false;
 
-                // Send completion notification to client with player info for evaluation
                 ws.send(JSON.stringify({
                   type: 'processing-complete',
                   playerName: session.playerName,
                   challenge: session.challenge,
                 }));
 
-                // Remove marker from output before sending to client
                 const cleanedData = data.replace(session.completionMarker, '').replace(/\n\s*\n/g, '\n');
                 if (cleanedData.trim()) {
                   ws.send(JSON.stringify({ type: 'output', data: cleanedData }));
-                  // Also broadcast to spectators
                   if (session.roomCode) {
                     broadcastToSpectators(session.roomCode, session.playerName, cleanedData);
                   }
@@ -423,18 +512,26 @@ wss.on('connection', (ws) => {
           const completionMarker = `___CLAUDE_DONE_${Date.now()}___`;
           session.completionMarker = completionMarker;
 
-          // Use Claude's --print mode with completion marker
-          // Heredoc delimiter must be on its own line, then echo marker on next line
-          const claudeCmd = `claude --dangerously-skip-permissions --print << 'PROMPT_EOF'
-${input}
-PROMPT_EOF
-echo "${completionMarker}"
-`;
-          session.ptyProcess.write(claudeCmd);
-          console.log(`[${sessionId}] Sent Claude --print command with marker: ${completionMarker}`);
+          // Start Claude interactively if not already running, then send prompt
+          if (!session.claudeRunning) {
+            session.claudeRunning = true;
+            session.pendingPrompt = input;
+            session.ptyProcess.write('claude --dangerously-skip-permissions\r');
+            console.log(`[${sessionId}] Starting Claude Code interactively...`);
 
-          // Notify client that processing started
-          ws.send(JSON.stringify({ type: 'processing-started' }));
+            // Wait for Claude to initialize (look for the prompt), then send the user's prompt
+            // processing-started will be sent after Claude is ready
+            session.waitingForClaudeReady = true;
+          } else {
+            // Claude already running, just send the prompt
+            session.ptyProcess.write(input + '\r');
+            session.waitingForCompletion = true;
+            session.outputSeen = false;
+            console.log(`[${sessionId}] Sent prompt to Claude: ${input.substring(0, 50)}...`);
+
+            // Notify client that processing started
+            ws.send(JSON.stringify({ type: 'processing-started' }));
+          }
         } else {
           console.log(`[${sessionId}] No session found for input`);
         }

@@ -1,15 +1,21 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../db';
 import { chatMessages, rooms, users, roomSpectators } from '../db/schema';
-import { eq, and, or, desc } from 'drizzle-orm';
-import { requireAuth } from '../middleware/auth';
+import { eq, and, desc } from 'drizzle-orm';
+import { authPlugin, getUserFromToken } from '../middleware/auth';
 
 export const chatRoutes = new Elysia({ prefix: '/chat' })
-  .use(requireAuth)
+  .use(authPlugin)
   // Get room chat messages
   .get(
     '/:roomCode',
-    async ({ params, user, set }) => {
+    async ({ params, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
       // Find room
       const [room] = await db
         .select()
@@ -66,7 +72,13 @@ export const chatRoutes = new Elysia({ prefix: '/chat' })
   // Send a chat message
   .post(
     '/:roomCode',
-    async ({ params, body, user, set }) => {
+    async ({ params, body, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
       // Find room
       const [room] = await db
         .select()

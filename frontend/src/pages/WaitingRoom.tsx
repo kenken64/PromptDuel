@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
+import { useSupabaseChat } from '../contexts/SupabaseChatContext';
 import { config } from '../config';
 
 export function WaitingRoom() {
@@ -11,15 +12,20 @@ export function WaitingRoom() {
   const {
     room,
     role,
-    chatMessages,
     isConnected,
     toggleReady,
     startGame,
     leaveRoom,
-    sendChatMessage,
     connectToRoom,
     disconnectFromRoom,
   } = useRoom();
+  const {
+    messages: chatMessages,
+    isLoading: isChatLoading,
+    sendMessage: sendSupabaseMessage,
+    subscribeToRoom,
+    unsubscribeFromRoom,
+  } = useSupabaseChat();
 
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
   const [roomData, setRoomData] = useState<any>(null);
@@ -28,45 +34,57 @@ export function WaitingRoom() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch room details
-  useEffect(() => {
+  const fetchRoom = async () => {
     if (!code || !token) return;
 
-    const fetchRoom = async () => {
-      try {
-        const response = await fetch(`${config.apiUrl}/rooms/${code}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+    try {
+      const response = await fetch(`${config.apiUrl}/rooms/${code}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (data.success) {
-          setRoomData(data.room);
+      if (data.success) {
+        setRoomData(data.room);
 
-          // If game is already playing, redirect
-          if (data.room.status === 'playing') {
-            const isPlayer =
-              data.room.player1?.id === user?.id || data.room.player2?.id === user?.id;
-            if (isPlayer) {
-              navigate(`/game/${code}`);
-            } else {
-              navigate(`/spectate/${code}`);
-            }
+        // If game is already playing, redirect
+        if (data.room.status === 'playing') {
+          const isPlayer =
+            data.room.player1?.id === user?.id || data.room.player2?.id === user?.id;
+          if (isPlayer) {
+            navigate(`/game/${code}`);
+          } else {
+            navigate(`/spectate/${code}`);
           }
-        } else {
-          setError(data.error || 'Room not found');
         }
-      } catch (error) {
-        console.error('Failed to fetch room:', error);
-        setError('Failed to load room');
-      } finally {
-        setIsLoadingRoom(false);
+      } else {
+        setError(data.error || 'Room not found');
       }
-    };
+    } catch (error) {
+      console.error('Failed to fetch room:', error);
+      setError('Failed to load room');
+    } finally {
+      setIsLoadingRoom(false);
+    }
+  };
 
+  // Initial fetch
+  useEffect(() => {
     fetchRoom();
   }, [code, token, user?.id, navigate]);
+
+  // Poll for room updates every 3 seconds (fallback for WebSocket issues)
+  useEffect(() => {
+    if (!code || !token || isLoadingRoom) return;
+
+    const interval = setInterval(() => {
+      fetchRoom();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [code, token, isLoadingRoom]);
 
   // Connect to room WebSocket
   useEffect(() => {
@@ -78,6 +96,17 @@ export function WaitingRoom() {
       disconnectFromRoom();
     };
   }, [code, isLoadingRoom, roomData, connectToRoom, disconnectFromRoom]);
+
+  // Subscribe to Supabase chat when room is loaded
+  useEffect(() => {
+    if (code && !isLoadingRoom) {
+      subscribeToRoom(code);
+    }
+
+    return () => {
+      unsubscribeFromRoom();
+    };
+  }, [code, isLoadingRoom, subscribeToRoom, unsubscribeFromRoom]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -95,11 +124,13 @@ export function WaitingRoom() {
     }
   }, [room?.status, role, code, navigate]);
 
-  const handleSendChat = (e: React.FormEvent) => {
+  const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (chatInput.trim()) {
-      sendChatMessage(chatInput.trim());
-      setChatInput('');
+    if (chatInput.trim() && code) {
+      const success = await sendSupabaseMessage(code, chatInput.trim());
+      if (success) {
+        setChatInput('');
+      }
     }
   };
 
@@ -111,16 +142,17 @@ export function WaitingRoom() {
   };
 
   const handleLeaveRoom = async () => {
-    await leaveRoom();
+    await leaveRoom(code);
     navigate('/lobby');
   };
 
   if (isLoadingRoom) {
     return (
-      <div className="min-h-screen bg-[#212529] flex items-center justify-center font-['Press_Start_2P']">
-        <div className="nes-container is-dark text-center">
-          <i className="nes-icon trophy is-large animate-pulse"></i>
-          <p className="mt-4">Loading room...</p>
+      <div className="page-container flex items-center justify-center font-['Press_Start_2P']">
+        <div className="bg-pattern"></div>
+        <div className="loading-container">
+          <i className="nes-icon trophy is-large trophy-bounce"></i>
+          <p className="loading-text text-sm">Loading room...</p>
         </div>
       </div>
     );
@@ -128,10 +160,11 @@ export function WaitingRoom() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#212529] flex items-center justify-center font-['Press_Start_2P']">
-        <div className="nes-container is-dark with-title max-w-md">
+      <div className="page-container flex items-center justify-center font-['Press_Start_2P']">
+        <div className="bg-pattern"></div>
+        <div className="nes-container is-dark with-title max-w-md animate-fade-in">
           <p className="title">Error</p>
-          <p className="text-sm mb-4">{error}</p>
+          <p className="text-sm mb-4 text-error">{error}</p>
           <button onClick={() => navigate('/lobby')} className="nes-btn is-primary">
             Back to Lobby
           </button>
@@ -152,21 +185,23 @@ export function WaitingRoom() {
   const bothPlayersJoined = player1 && player2;
 
   return (
-    <div className="min-h-screen bg-[#212529] font-['Press_Start_2P']">
+    <div className="page-container font-['Press_Start_2P']">
+      <div className="bg-pattern"></div>
+
       {/* Header */}
-      <div className="bg-black p-4 border-b-4 border-[#92cc41]">
+      <header className="app-header p-4">
         <div className="container mx-auto flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <i className="nes-icon trophy is-medium"></i>
+          <div className="flex items-center gap-4 animate-fade-in">
+            <i className="nes-icon trophy is-medium trophy-bounce"></i>
             <div>
-              <h1 className="text-lg">Room: {code}</h1>
+              <h1 className="text-lg text-primary glow-text">Room: {code}</h1>
               <p className="text-xs text-[#92cc41]">
                 Challenge {displayRoom?.challenge} - Waiting for players
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 animate-fade-in animate-delay-1">
             {isConnected ? (
               <span className="nes-badge">
                 <span className="is-success">Connected</span>
@@ -176,25 +211,26 @@ export function WaitingRoom() {
                 <span className="is-warning">Connecting...</span>
               </span>
             )}
+            <span style={{ fontSize: '0.7rem', color: '#888' }}>
+              Welcome, <span style={{ color: '#92cc41' }}>{user?.username}</span>
+            </span>
             <button onClick={handleLeaveRoom} className="nes-btn is-error text-xs">
               Leave
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8">
+      <main className="page-content">
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Players Section */}
-          <div className="nes-container is-dark with-title">
+          <div className="nes-container is-dark with-title animate-fade-in animate-delay-2 glow-primary">
             <p className="title">Players</p>
 
             <div className="grid gap-4">
               {/* Player 1 */}
               <div
-                className={`nes-container is-rounded ${
-                  displayRoom?.player1Ready ? 'is-success' : ''
-                }`}
+                className={`player-slot ${displayRoom?.player1Ready ? 'is-ready' : ''} ${!player1 ? 'is-empty' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -208,22 +244,33 @@ export function WaitingRoom() {
                   </div>
                   {player1 && (
                     <span
-                      className={`text-xs ${displayRoom?.player1Ready ? 'text-green-400' : 'text-gray-400'}`}
+                      className={`status-badge ${displayRoom?.player1Ready ? 'is-playing' : ''}`}
+                      style={{ background: displayRoom?.player1Ready ? '#92cc41' : '#666' }}
                     >
                       {displayRoom?.player1Ready ? 'READY' : 'Not Ready'}
                     </span>
                   )}
                 </div>
+                {/* Player 1 Ready Button */}
+                {isPlayer1 && (
+                  <div className="mt-3">
+                    <button
+                      onClick={toggleReady}
+                      className={`nes-btn ${myReady ? 'is-warning' : 'is-success'} w-full`}
+                      style={{ fontSize: '0.7rem' }}
+                    >
+                      {myReady ? 'Cancel Ready' : 'Ready!'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* VS */}
-              <div className="text-center text-2xl opacity-50">VS</div>
+              <div className="vs-divider text-center text-2xl">VS</div>
 
               {/* Player 2 */}
               <div
-                className={`nes-container is-rounded ${
-                  displayRoom?.player2Ready ? 'is-success' : ''
-                }`}
+                className={`player-slot ${displayRoom?.player2Ready ? 'is-ready' : ''} ${!player2 ? 'is-empty' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -237,32 +284,36 @@ export function WaitingRoom() {
                   </div>
                   {player2 && (
                     <span
-                      className={`text-xs ${displayRoom?.player2Ready ? 'text-green-400' : 'text-gray-400'}`}
+                      className={`status-badge ${displayRoom?.player2Ready ? 'is-playing' : ''}`}
+                      style={{ background: displayRoom?.player2Ready ? '#92cc41' : '#666' }}
                     >
                       {displayRoom?.player2Ready ? 'READY' : 'Not Ready'}
                     </span>
                   )}
                 </div>
+                {/* Player 2 Ready Button */}
+                {isPlayer2 && (
+                  <div className="mt-3">
+                    <button
+                      onClick={toggleReady}
+                      className={`nes-btn ${myReady ? 'is-warning' : 'is-success'} w-full`}
+                      style={{ fontSize: '0.7rem' }}
+                    >
+                      {myReady ? 'Cancel Ready' : 'Ready!'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="mt-6 flex flex-wrap gap-4">
-              {isPlayer && (
-                <button
-                  onClick={toggleReady}
-                  className={`nes-btn ${myReady ? 'is-warning' : 'is-success'} flex-1`}
-                >
-                  {myReady ? 'Cancel Ready' : 'Ready!'}
-                </button>
-              )}
-
-              {isHost && bothPlayersJoined && bothReady && (
-                <button onClick={handleStartGame} className="nes-btn is-primary flex-1">
+            {/* Start Game Button - only for host when both ready */}
+            {isHost && bothPlayersJoined && bothReady && (
+              <div className="mt-6">
+                <button onClick={handleStartGame} className="nes-btn is-primary w-full">
                   Start Game!
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Spectators */}
             {(displayRoom?.spectators?.length > 0 || role === 'spectator') && (
@@ -285,24 +336,49 @@ export function WaitingRoom() {
           </div>
 
           {/* Chat Section */}
-          <div className="nes-container is-dark with-title">
+          <div className="nes-container is-dark with-title animate-fade-in animate-delay-3">
             <p className="title">Chat</p>
 
-            <div
-              className="h-64 overflow-y-auto mb-4 p-2"
-              style={{ backgroundColor: '#1a1a1a' }}
-            >
+            <div className="chat-container mb-4 p-2">
               {chatMessages.length === 0 ? (
                 <p className="text-xs text-gray-500 text-center py-4">
                   No messages yet. Say hello!
                 </p>
               ) : (
-                chatMessages.map((msg, idx) => (
-                  <div key={msg.id || idx} className="mb-2 text-xs">
-                    <span className="text-[#92cc41]">{msg.username}: </span>
-                    <span className="text-gray-300">{msg.message}</span>
-                  </div>
-                ))
+                chatMessages.map((msg, idx) => {
+                  const isCurrentUser = msg.user_id === user?.id || msg.username === user?.username;
+                  return (
+                    <div
+                      key={msg.id || idx}
+                      className="chat-message"
+                      style={{
+                        textAlign: isCurrentUser ? 'right' : 'left',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          backgroundColor: isCurrentUser ? 'rgba(146, 204, 65, 0.2)' : 'rgba(32, 156, 238, 0.1)',
+                          maxWidth: '80%',
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: isCurrentUser ? '#92cc41' : '#209cee',
+                            fontWeight: 'bold',
+                            fontSize: '0.65rem',
+                          }}
+                        >
+                          {isCurrentUser ? 'You' : msg.username}:
+                        </span>{' '}
+                        <span style={{ color: '#ccc', fontSize: '0.7rem' }}>{msg.message}</span>
+                      </span>
+                    </div>
+                  );
+                })
               )}
               <div ref={chatEndRef} />
             </div>
@@ -311,12 +387,13 @@ export function WaitingRoom() {
               <input
                 type="text"
                 className="nes-input is-dark flex-1"
-                placeholder="Type a message..."
+                placeholder={isChatLoading ? "Loading..." : "Type a message..."}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 maxLength={500}
+                disabled={isChatLoading}
               />
-              <button type="submit" className="nes-btn is-primary">
+              <button type="submit" className="nes-btn is-primary" disabled={isChatLoading || !chatInput.trim()}>
                 Send
               </button>
             </form>
@@ -324,17 +401,23 @@ export function WaitingRoom() {
         </div>
 
         {/* Room Info */}
-        <div className="mt-6 nes-container is-dark">
-          <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-            <p>Room Code: <span className="text-white">{code}</span></p>
-            <p>Challenge: <span className="text-white">{displayRoom?.challenge}</span></p>
-            <p>Status: <span className="text-[#92cc41]">{displayRoom?.status}</span></p>
+        <div className="mt-6 nes-container is-dark animate-fade-in animate-delay-4">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px' }}>
+            <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+              Room Code: <span style={{ color: '#92cc41', fontWeight: 'bold', marginLeft: '8px' }}>{code}</span>
+            </p>
+            <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+              Challenge: <span style={{ color: '#209cee', marginLeft: '8px' }}>{displayRoom?.challenge}</span>
+            </p>
+            <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+              Status: <span style={{ color: '#92cc41', marginLeft: '8px' }}>{displayRoom?.status}</span>
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-2">
+          <p style={{ fontSize: '0.7rem', color: '#666', marginTop: '16px', marginBottom: 0 }}>
             Share the room code with a friend to invite them to play!
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { getFinalScore, getMultiplier } from '../gameRules';
 export function ResultsPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { leaveRoom } = useRoom();
   const {
     player1,
@@ -19,7 +20,7 @@ export function ResultsPage() {
   } = useGame();
 
   const handlePlayAgain = async () => {
-    await leaveRoom();
+    await leaveRoom(code);
     resetGame();
     navigate('/lobby');
   };
@@ -30,57 +31,62 @@ export function ResultsPage() {
   const p2Multiplier = getMultiplier(player2.promptsUsed);
 
   return (
-    <div
-      className="min-h-screen font-['Press_Start_2P']"
-      style={{ backgroundColor: '#212529', color: '#fff' }}
-    >
+    <div className="page-container font-['Press_Start_2P']">
+      <div className="bg-pattern"></div>
+
       {/* Header */}
-      <div
-        style={{ backgroundColor: '#000', padding: '1rem 0', borderBottom: '4px solid #92cc41' }}
-      >
+      <header className="app-header p-4">
         <div className="container mx-auto px-4">
-          <div className="flex items-center gap-4">
-            <i className="nes-icon trophy is-large"></i>
-            <div>
-              <h1 className="text-xl">Duel Complete!</h1>
-              <p className="text-xs text-[#92cc41]">Challenge {selectedChallenge} Results</p>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4 animate-fade-in">
+              <i className="nes-icon trophy is-large trophy-bounce"></i>
+              <div>
+                <h1 className="text-xl text-primary glow-text">Duel Complete!</h1>
+                <p className="text-xs text-[#92cc41]">Challenge {selectedChallenge} Results</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 animate-fade-in animate-delay-1">
+              <span style={{ fontSize: '0.7rem', color: '#888' }}>
+                Player: <span style={{ color: '#92cc41' }}>{user?.username}</span>
+              </span>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8">
+      <main className="page-content">
         {/* Winner Announcement */}
-        <div className="text-center mb-8">
-          <div className="nes-container is-dark is-rounded inline-block px-8 py-4">
+        <div className="text-center mb-8 animate-fade-in">
+          <div className="nes-container is-dark is-rounded inline-block px-8 py-4 glow-primary">
             {winner ? (
               <>
-                <i className="nes-icon trophy is-large mb-4"></i>
-                <h2 className="text-2xl text-[#92cc41] mb-2">
+                <i className="nes-icon trophy is-large mb-4 trophy-bounce"></i>
+                <h2 className="text-2xl text-[#92cc41] mb-2 glow-text">
                   {winner === 'player1' ? player1.name : player2.name} Wins!
                 </h2>
               </>
             ) : (
               <>
-                <i className="nes-icon star is-large mb-4"></i>
-                <h2 className="text-2xl text-yellow-400 mb-2">It's a Tie!</h2>
+                <i className="nes-icon star is-large mb-4 icon-spin"></i>
+                <h2 className="text-2xl text-yellow-400 mb-2 glow-text">It's a Tie!</h2>
               </>
             )}
           </div>
         </div>
 
         {/* Final Scores */}
-        <div className="nes-container is-dark with-title mb-8">
+        <div className="nes-container is-dark with-title mb-8 animate-fade-in animate-delay-1">
           <p className="title">Final Scores</p>
 
           <div className="grid md:grid-cols-2 gap-8">
             {/* Player 1 */}
             <div
-              className={`nes-container is-rounded ${winner === 'player1' ? 'is-success' : ''}`}
+              className={`player-slot ${winner === 'player1' ? 'is-ready' : ''} animate-slide-left`}
+              style={{ borderColor: winner === 'player1' ? '#92cc41' : '#333' }}
             >
               <div className="text-center">
                 <p className="text-sm mb-2">{player1.name}</p>
-                <p className="text-4xl text-[#209cee] mb-2">{p1FinalScore}</p>
+                <p className="text-4xl text-[#209cee] mb-2 glow-text">{p1FinalScore}</p>
                 <p className="text-xs text-gray-400 mb-4">
                   {player1.score} × {p1Multiplier} multiplier
                 </p>
@@ -97,7 +103,7 @@ export function ResultsPage() {
                   </p>
                   {evaluationResults?.player1 && (
                     <p className="mb-1">
-                      Grade: <span className="text-white">{evaluationResults.player1.grade}</span>
+                      Grade: <span className="text-[#92cc41]">{evaluationResults.player1.grade}</span>
                     </p>
                   )}
                 </div>
@@ -106,11 +112,12 @@ export function ResultsPage() {
 
             {/* Player 2 */}
             <div
-              className={`nes-container is-rounded ${winner === 'player2' ? 'is-success' : ''}`}
+              className={`player-slot ${winner === 'player2' ? 'is-ready' : ''} animate-slide-right`}
+              style={{ borderColor: winner === 'player2' ? '#92cc41' : '#333' }}
             >
               <div className="text-center">
                 <p className="text-sm mb-2">{player2.name}</p>
-                <p className="text-4xl text-[#92cc41] mb-2">{p2FinalScore}</p>
+                <p className="text-4xl text-[#92cc41] mb-2 glow-text">{p2FinalScore}</p>
                 <p className="text-xs text-gray-400 mb-4">
                   {player2.score} × {p2Multiplier} multiplier
                 </p>
@@ -127,7 +134,7 @@ export function ResultsPage() {
                   </p>
                   {evaluationResults?.player2 && (
                     <p className="mb-1">
-                      Grade: <span className="text-white">{evaluationResults.player2.grade}</span>
+                      Grade: <span className="text-[#92cc41]">{evaluationResults.player2.grade}</span>
                     </p>
                   )}
                 </div>
@@ -138,7 +145,7 @@ export function ResultsPage() {
 
         {/* Detailed Evaluation Results */}
         {evaluationResults && (
-          <div className="nes-container is-dark with-title mb-8">
+          <div className="nes-container is-dark with-title mb-8 animate-fade-in animate-delay-2">
             <p className="title">Evaluation Details</p>
 
             <div className="grid md:grid-cols-2 gap-8">
@@ -184,12 +191,12 @@ export function ResultsPage() {
         )}
 
         {/* Actions */}
-        <div className="text-center">
-          <button onClick={handlePlayAgain} className="nes-btn is-success">
+        <div className="text-center animate-fade-in animate-delay-3">
+          <button onClick={handlePlayAgain} className="nes-btn is-success animate-glow">
             Back to Lobby
           </button>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

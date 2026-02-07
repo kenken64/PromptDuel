@@ -1,0 +1,601 @@
+/* =========================================
+   Prompt Duel - Enhanced NES Theme
+   ========================================= */
+
+/* CSS Variables for consistent theming */
+:root {
+  /* Primary Colors */
+  --color-bg-dark: #0f0f1a;
+  --color-bg-medium: #1a1a2e;
+  --color-bg-light: #212529;
+
+  /* Accent Colors */
+  --color-primary: #92cc41;
+  --color-primary-dark: #76a832;
+  --color-primary-glow: rgba(146, 204, 65, 0.3);
+
+  --color-secondary: #209cee;
+  --color-secondary-dark: #1a7dc4;
+  --color-secondary-glow: rgba(32, 156, 238, 0.3);
+
+  --color-warning: #f7d51d;
+  --color-warning-dark: #d4b818;
+
+  --color-error: #e76e55;
+  --color-error-dark: #c45a44;
+
+  --color-success: #92cc41;
+
+  /* Text Colors */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a0a0a0;
+  --color-text-muted: #666666;
+
+  /* Gradients */
+  --gradient-dark: linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%);
+  --gradient-card: linear-gradient(145deg, #1e1e32 0%, #151525 100%);
+  --gradient-primary: linear-gradient(135deg, #92cc41 0%, #76a832 100%);
+  --gradient-secondary: linear-gradient(135deg, #209cee 0%, #1a7dc4 100%);
+
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --shadow-glow-primary: 0 0 20px var(--color-primary-glow);
+  --shadow-glow-secondary: 0 0 20px var(--color-secondary-glow);
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+
+  /* Border Radius (pixel-style) */
+  --radius-sm: 0;
+  --radius-md: 0;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 400ms ease;
+}
+
+/* =========================================
+   Base Styles
+   ========================================= */
+
+body {
+  background: var(--gradient-dark);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
+
+/* Animated background pattern */
+.bg-pattern {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(circle at 20% 80%, rgba(146, 204, 65, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(32, 156, 238, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Scanline effect for retro feel */
+.scanlines::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.1) 0px,
+    rgba(0, 0, 0, 0.1) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.3;
+}
+
+/* =========================================
+   Enhanced NES Components
+   ========================================= */
+
+/* Dark container improvements */
+.nes-container.is-dark {
+  background: var(--gradient-card);
+  border-color: #333;
+  box-shadow: var(--shadow-md);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.nes-container.is-dark:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Card with glow effect */
+.nes-container.is-dark.glow-primary {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.nes-container.is-dark.glow-secondary {
+  border-color: var(--color-secondary);
+  box-shadow: var(--shadow-glow-secondary);
+}
+
+/* Title styling */
+.nes-container.with-title > .title {
+  background: var(--color-bg-dark);
+  color: var(--color-primary);
+  padding: 0 var(--space-sm);
+}
+
+/* =========================================
+   Enhanced Buttons
+   ========================================= */
+
+.nes-btn {
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.nes-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left var(--transition-slow);
+}
+
+.nes-btn:hover::before {
+  left: 100%;
+}
+
+.nes-btn:hover {
+  transform: translateY(-2px);
+}
+
+.nes-btn:active {
+  transform: translateY(0);
+}
+
+/* Primary button glow */
+.nes-btn.is-primary:hover {
+  box-shadow: 0 4px 12px rgba(32, 156, 238, 0.4);
+}
+
+/* Success button glow */
+.nes-btn.is-success:hover {
+  box-shadow: 0 4px 12px rgba(146, 204, 65, 0.4);
+}
+
+/* Warning button glow */
+.nes-btn.is-warning:hover {
+  box-shadow: 0 4px 12px rgba(247, 213, 29, 0.4);
+}
+
+/* Error button glow */
+.nes-btn.is-error:hover {
+  box-shadow: 0 4px 12px rgba(231, 110, 85, 0.4);
+}
+
+/* =========================================
+   Input Enhancements
+   ========================================= */
+
+.nes-input.is-dark {
+  background: var(--color-bg-dark);
+  border-color: #444;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.nes-input.is-dark:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+  outline: none;
+}
+
+.nes-textarea.is-dark {
+  background: var(--color-bg-dark);
+  border-color: #444;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.nes-textarea.is-dark:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+  outline: none;
+}
+
+/* =========================================
+   Header Styles
+   ========================================= */
+
+.app-header {
+  background: linear-gradient(180deg, #000000 0%, #0a0a15 100%);
+  border-bottom: 4px solid var(--color-primary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.app-header::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--color-primary);
+  box-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+/* =========================================
+   Page Layouts
+   ========================================= */
+
+.page-container {
+  min-height: 100vh;
+  background: var(--gradient-dark);
+  position: relative;
+}
+
+.page-content {
+  padding: var(--space-xl);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* =========================================
+   Card Grid
+   ========================================= */
+
+.card-grid {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+@media (min-width: 768px) {
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* =========================================
+   Room Card
+   ========================================= */
+
+.room-card {
+  background: var(--gradient-card);
+  border: 4px solid #333;
+  padding: var(--space-lg);
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.room-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--gradient-primary);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.room-card:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg), var(--shadow-glow-primary);
+}
+
+.room-card:hover::before {
+  opacity: 1;
+}
+
+.room-card.is-playing {
+  border-color: var(--color-warning);
+}
+
+.room-card.is-playing::before {
+  background: linear-gradient(90deg, var(--color-warning) 0%, var(--color-warning-dark) 100%);
+  opacity: 1;
+}
+
+/* =========================================
+   Status Badges
+   ========================================= */
+
+.status-badge {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.status-badge.is-waiting {
+  background: var(--color-success);
+  color: #000;
+}
+
+.status-badge.is-playing {
+  background: var(--color-warning);
+  color: #000;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* =========================================
+   Player Slots
+   ========================================= */
+
+.player-slot {
+  background: var(--color-bg-dark);
+  border: 3px solid #333;
+  padding: var(--space-md);
+  transition: all var(--transition-normal);
+}
+
+.player-slot.is-ready {
+  border-color: var(--color-success);
+  box-shadow: inset 0 0 20px rgba(146, 204, 65, 0.1);
+}
+
+.player-slot.is-empty {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+/* =========================================
+   Chat Styles
+   ========================================= */
+
+.chat-container {
+  background: var(--color-bg-dark);
+  border: 3px solid #333;
+  height: 300px;
+  overflow-y: auto;
+}
+
+.chat-message {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid #222;
+  transition: background var(--transition-fast);
+}
+
+.chat-message:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-message .username {
+  color: var(--color-primary);
+  font-weight: bold;
+}
+
+.chat-message .timestamp {
+  color: var(--color-text-muted);
+  font-size: 0.6rem;
+}
+
+/* =========================================
+   Terminal Styles
+   ========================================= */
+
+.terminal-window {
+  background: #0a0a0a;
+  border: 4px solid #333;
+  font-family: 'Courier New', monospace;
+  position: relative;
+}
+
+.terminal-header {
+  background: linear-gradient(180deg, #333 0%, #222 100%);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 2px solid #444;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.terminal-header .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.terminal-header .dot.red { background: #ff5f56; }
+.terminal-header .dot.yellow { background: #ffbd2e; }
+.terminal-header .dot.green { background: #27ca40; }
+
+.terminal-content {
+  padding: var(--space-md);
+  min-height: 200px;
+  max-height: 400px;
+  overflow-y: auto;
+  color: #00ff00;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* =========================================
+   Animations
+   ========================================= */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 5px var(--color-primary-glow); }
+  50% { box-shadow: 0 0 20px var(--color-primary-glow), 0 0 30px var(--color-primary-glow); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.animate-slide-left {
+  animation: slide-in-left 0.4s ease-out forwards;
+}
+
+.animate-slide-right {
+  animation: slide-in-right 0.4s ease-out forwards;
+}
+
+.animate-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.animate-delay-1 { animation-delay: 0.1s; }
+.animate-delay-2 { animation-delay: 0.2s; }
+.animate-delay-3 { animation-delay: 0.3s; }
+.animate-delay-4 { animation-delay: 0.4s; }
+
+/* =========================================
+   Trophy/Icon Animations
+   ========================================= */
+
+.trophy-bounce {
+  animation: trophy-bounce 1s ease-in-out infinite;
+}
+
+@keyframes trophy-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.icon-spin {
+  animation: icon-spin 3s linear infinite;
+}
+
+@keyframes icon-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* =========================================
+   Loading States
+   ========================================= */
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: var(--space-lg);
+}
+
+.loading-text {
+  color: var(--color-text-secondary);
+  animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* =========================================
+   Responsive Adjustments
+   ========================================= */
+
+@media (max-width: 640px) {
+  .page-content {
+    padding: var(--space-md);
+  }
+
+  .nes-container {
+    padding: var(--space-md) !important;
+  }
+
+  .nes-container.with-title > .title {
+    font-size: 0.65rem;
+  }
+}
+
+/* =========================================
+   Utility Classes
+   ========================================= */
+
+.text-primary { color: var(--color-primary); }
+.text-secondary { color: var(--color-secondary); }
+.text-warning { color: var(--color-warning); }
+.text-error { color: var(--color-error); }
+.text-muted { color: var(--color-text-muted); }
+
+.bg-dark { background: var(--color-bg-dark); }
+.bg-medium { background: var(--color-bg-medium); }
+
+.border-primary { border-color: var(--color-primary) !important; }
+.border-secondary { border-color: var(--color-secondary) !important; }
+
+.glow-text {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* VS Divider */
+.vs-divider {
+  font-size: 1.5rem;
+  color: var(--color-text-muted);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.vs-divider::before,
+.vs-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 30px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #333, transparent);
+}
+
+.vs-divider::before { right: 100%; margin-right: 10px; }
+.vs-divider::after { left: 100%; margin-left: 10px; }

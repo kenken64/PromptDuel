@@ -1,21 +1,13 @@
 import { Elysia, t } from 'elysia';
-import { jwt } from '@elysiajs/jwt';
 import bcrypt from 'bcryptjs';
 import { db } from '../db';
-import { users, sessions } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import { authPlugin, requireAuth } from '../middleware/auth';
+import { users, sessions, rooms, roomSpectators } from '../db/schema';
+import { eq, or } from 'drizzle-orm';
+import { authPlugin, getUserFromToken } from '../middleware/auth';
 
 const SALT_ROUNDS = 10;
 
 export const authRoutes = new Elysia({ prefix: '/auth' })
-  .use(
-    jwt({
-      name: 'jwt',
-      secret: process.env.JWT_SECRET || 'your-super-secret-key-change-in-production',
-      exp: '7d',
-    })
-  )
   .use(authPlugin)
   .post(
     '/register',
@@ -174,6 +166,57 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
     }
 
     try {
+      // Get user before deleting session
+      const user = await getUserFromToken(bearer);
+
+      if (user) {
+        // Find all rooms where user is a player
+        const userRooms = await db
+          .select()
+          .from(rooms)
+          .where(or(eq(rooms.player1Id, user.id), eq(rooms.player2Id, user.id)));
+
+        for (const room of userRooms) {
+          if (room.status === 'waiting') {
+            if (room.player1Id === user.id) {
+              // User is host/player1
+              if (room.player2Id) {
+                // Promote player2 to host
+                await db
+                  .update(rooms)
+                  .set({
+                    hostId: room.player2Id,
+                    player1Id: room.player2Id,
+                    player2Id: null,
+                    player1Ready: room.player2Ready,
+                    player2Ready: false,
+                  })
+                  .where(eq(rooms.id, room.id));
+              } else {
+                // No player2, delete room
+                await db.delete(roomSpectators).where(eq(roomSpectators.roomId, room.id));
+                await db.delete(rooms).where(eq(rooms.id, room.id));
+              }
+            } else if (room.player2Id === user.id) {
+              // User is player2, just remove them
+              await db
+                .update(rooms)
+                .set({ player2Id: null, player2Ready: false })
+                .where(eq(rooms.id, room.id));
+            }
+          } else if (room.status === 'playing') {
+            // If a player leaves during an active game, mark as finished
+            await db
+              .update(rooms)
+              .set({ status: 'finished' })
+              .where(eq(rooms.id, room.id));
+          }
+        }
+
+        // Remove from spectators
+        await db.delete(roomSpectators).where(eq(roomSpectators.userId, user.id));
+      }
+
       // Delete session
       await db.delete(sessions).where(eq(sessions.token, bearer));
       return { success: true };
@@ -183,8 +226,8 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
       return { success: false, error: 'Logout failed' };
     }
   })
-  .get('/me', async ({ getUser, set }) => {
-    const user = await getUser();
+  .get('/me', async ({ bearer, set }) => {
+    const user = await getUserFromToken(bearer);
     if (!user) {
       set.status = 401;
       return { success: false, error: 'Not authenticated' };

@@ -12,7 +12,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get the intended destination or default to lobby
   const from = (location.state as any)?.from?.pathname || '/lobby';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,28 +35,40 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#212529] flex items-center justify-center p-4 font-['Press_Start_2P']">
-      <div className="nes-container is-dark with-title max-w-md w-full">
-        <p className="title">Prompt Duel</p>
+    <div className="page-container flex items-center justify-center p-4 font-['Press_Start_2P']">
+      <div className="bg-pattern"></div>
 
-        <div className="nes-field is-inline mb-8 text-center w-full">
-          <i className="nes-icon trophy is-large"></i>
+      <div className="nes-container is-dark max-w-md w-full animate-fade-in glow-primary">
+        <div className="text-center mb-6">
+          <h1 style={{ fontSize: '1.2rem', color: '#92cc41', marginBottom: '24px' }}>Prompt Duel</h1>
+          <div style={{
+            backgroundColor: '#000',
+            padding: '16px',
+            borderRadius: '8px',
+            display: 'inline-block',
+            border: '2px solid #333'
+          }}>
+            <img src="/logo.png" alt="Prompt Duel" style={{ height: '150px', width: 'auto', display: 'block' }} />
+          </div>
         </div>
 
         <div className="mb-8 text-center">
-          <p>Welcome, Challenger!</p>
-          <p className="text-xs text-gray-400 mt-2">Enter the arena of prompts.</p>
+          <p className="text-[#92cc41] glow-text">Welcome, Challenger!</p>
+          <p className="text-xs text-gray-400 mt-3">Enter the arena of AI prompts.</p>
         </div>
 
         {error && (
-          <div className="nes-container is-rounded is-error mb-4">
-            <p className="text-xs">{error}</p>
+          <div
+            className="nes-container is-rounded mb-4 animate-fade-in"
+            style={{ borderColor: '#e76e55', background: 'rgba(231, 110, 85, 0.1)' }}
+          >
+            <p className="text-xs" style={{ color: '#e76e55' }}>{error}</p>
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div className="nes-field mb-4">
-            <label htmlFor="username_field">Username</label>
+            <label htmlFor="username_field" className="text-gray-300 mb-2 block">Username</label>
             <input
               type="text"
               id="username_field"
@@ -71,7 +82,7 @@ export function LoginPage() {
           </div>
 
           <div className="nes-field mb-6">
-            <label htmlFor="password_field">Password</label>
+            <label htmlFor="password_field" className="text-gray-300 mb-2 block">Password</label>
             <input
               type="password"
               id="password_field"
@@ -90,18 +101,18 @@ export function LoginPage() {
               className="nes-btn is-primary w-full"
               disabled={isLoading}
             >
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Entering Arena...' : 'Enter Arena'}
             </button>
 
-            <Link to="/register" className="nes-btn w-full text-center">
+            <Link to="/register" className="nes-btn is-success w-full text-center">
               Create Account
             </Link>
           </div>
         </form>
 
-        <div className="mt-6 text-center">
-          <Link to="/" className="text-xs text-gray-400 hover:text-white">
-            Back to Home
+        <div className="mt-8 pt-6 border-t border-gray-700 text-center">
+          <Link to="/" className="text-xs text-gray-400 hover:text-[#92cc41] transition-colors">
+            &lt; Back to Home
           </Link>
         </div>
       </div>

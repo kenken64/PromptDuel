@@ -23,24 +23,71 @@ interface RoomState {
 const clients = new Map<string, Client>();
 const roomStates = new Map<string, RoomState>();
 
+// Cleanup stale connections every 5 minutes
+setInterval(() => {
+  let cleanedClients = 0;
+  let cleanedRooms = 0;
+
+  clients.forEach((client, clientId) => {
+    if (client.ws.readyState !== 1) { // Not OPEN
+      clients.delete(clientId);
+      cleanedClients++;
+    }
+  });
+
+  roomStates.forEach((room, roomCode) => {
+    // Remove disconnected players/spectators from room
+    room.players.forEach((client, userId) => {
+      if (client.ws.readyState !== 1) {
+        room.players.delete(userId);
+      }
+    });
+    room.spectators.forEach((client, userId) => {
+      if (client.ws.readyState !== 1) {
+        room.spectators.delete(userId);
+      }
+    });
+
+    // Remove empty rooms
+    if (room.players.size === 0 && room.spectators.size === 0) {
+      roomStates.delete(roomCode);
+      cleanedRooms++;
+    }
+  });
+
+  if (cleanedClients > 0 || cleanedRooms > 0) {
+    console.log(`Cleanup: removed ${cleanedClients} stale clients, ${cleanedRooms} empty rooms`);
+  }
+}, 5 * 60 * 1000);
+
 // Helper to broadcast to all room members
 function broadcastToRoom(roomCode: string, message: object, excludeClientId?: string) {
   const room = roomStates.get(roomCode);
-  if (!room) return;
+  if (!room) {
+    console.log(`broadcastToRoom: No room state for ${roomCode}`);
+    return;
+  }
 
   const data = JSON.stringify(message);
+  let sentCount = 0;
 
   room.players.forEach((client) => {
     if (client.id !== excludeClientId && client.ws.readyState === 1) {
       client.ws.send(data);
+      sentCount++;
+      console.log(`Broadcast to player ${client.username} (${client.id})`);
     }
   });
 
   room.spectators.forEach((client) => {
     if (client.id !== excludeClientId && client.ws.readyState === 1) {
       client.ws.send(data);
+      sentCount++;
+      console.log(`Broadcast to spectator ${client.username} (${client.id})`);
     }
   });
+
+  console.log(`broadcastToRoom: Sent to ${sentCount} clients in ${roomCode}, message type: ${(message as any).type}`);
 }
 
 // Helper to broadcast only to spectators
@@ -82,17 +129,21 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
       try {
         switch (msg.type) {
           case 'auth': {
+            console.log(`Auth attempt from ${clientId}`);
             // Authenticate the connection
             if (!msg.token) {
+              console.log(`Auth failed: No token provided`);
               ws.send(JSON.stringify({ type: 'error', error: 'Token required' }));
               return;
             }
 
             const payload = await (this as any).jwt.verify(msg.token);
             if (!payload) {
+              console.log(`Auth failed: Invalid token`);
               ws.send(JSON.stringify({ type: 'error', error: 'Invalid token' }));
               return;
             }
+            console.log(`Auth token verified for userId: ${payload.userId}`);
 
             // Verify session
             const [session] = await db
@@ -135,10 +186,12 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
                 username: user.username,
               })
             );
+            console.log(`Auth success: ${user.username} (${user.id}) - clientId: ${clientId}`);
             break;
           }
 
           case 'join-room': {
+            console.log(`Join-room request from clientId: ${clientId}, roomCode: ${msg.roomCode}`);
             const client = clients.get(clientId);
             if (!client) {
               ws.send(JSON.stringify({ type: 'error', error: 'Not authenticated' }));
@@ -196,18 +249,13 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
             const roomState = roomStates.get(roomCode)!;
             if (isPlayer) {
               roomState.players.set(client.userId, client);
+              console.log(`Player ${client.username} (${client.userId}) joined room ${roomCode}. Total players: ${roomState.players.size}`);
             } else {
               roomState.spectators.set(client.userId, client);
+              console.log(`Spectator ${client.username} (${client.userId}) joined room ${roomCode}. Total spectators: ${roomState.spectators.size}`);
             }
 
-            // Notify room
-            broadcastToRoom(roomCode, {
-              type: isPlayer ? 'player-joined' : 'spectator-joined',
-              userId: client.userId,
-              username: client.username,
-            });
-
-            // Send room state to the joining client
+            // Send room state to the joining client (moved before broadcast so we can include full state)
             const [player1] = room.player1Id
               ? await db
                   .select({ id: users.id, username: users.username })
@@ -249,6 +297,23 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
                 role: client.role,
               })
             );
+
+            // Broadcast player/spectator joined with full room state to others
+            broadcastToRoom(roomCode, {
+              type: isPlayer ? 'player-joined' : 'spectator-joined',
+              userId: client.userId,
+              username: client.username,
+              room: {
+                code: room.code,
+                challenge: room.challenge,
+                status: room.status,
+                player1,
+                player2,
+                player1Ready: room.player1Ready,
+                player2Ready: room.player2Ready,
+                spectators: spectatorRows,
+              },
+            }, clientId);
             break;
           }
 
@@ -330,7 +395,10 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
 
           case 'chat-message': {
             const client = clients.get(clientId);
+            console.log(`Chat message from ${client?.username} in room ${client?.roomCode}: ${msg.message}`);
+
             if (!client || !client.roomCode) {
+              console.log('Chat rejected: client not in a room');
               ws.send(JSON.stringify({ type: 'error', error: 'Not in a room' }));
               return;
             }
@@ -427,6 +495,12 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
               playerUsername: client.username,
               data: msg.data,
             });
+            break;
+          }
+
+          case 'ping': {
+            // Respond to heartbeat
+            ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
             break;
           }
 

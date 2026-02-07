@@ -13,12 +13,26 @@ Write-Host "========================================="
 Write-Host ""
 Write-Host "Checking Claude Code authentication..."
 $ClaudeCreds = Join-Path $env:USERPROFILE ".claude\.credentials.json"
+$ClaudeServerEnv = Join-Path $ScriptDir "..\claude-code-server\.env"
+$hasApiKey = $false
+
+# Check for API key in .env file
+if (Test-Path $ClaudeServerEnv) {
+    $envContent = Get-Content $ClaudeServerEnv -Raw
+    if ($envContent -match "ANTHROPIC_API_KEY=sk-") {
+        $hasApiKey = $true
+    }
+}
+
 if (Test-Path $ClaudeCreds) {
     Write-Host "Claude Code: LOGGED IN" -ForegroundColor Green
     Write-Host "  Credentials found at: $ClaudeCreds"
+} elseif ($hasApiKey) {
+    Write-Host "Claude Code: API KEY CONFIGURED" -ForegroundColor Green
+    Write-Host "  Using ANTHROPIC_API_KEY from claude-code-server/.env"
 } else {
     Write-Host "Claude Code: NOT LOGGED IN" -ForegroundColor Red
-    Write-Host "  Run 'claude login' to authenticate before starting the game."
+    Write-Host "  Run 'claude login' or set ANTHROPIC_API_KEY in claude-code-server/.env"
     Write-Host ""
     $choice = Read-Host "Continue anyway? (y/N)"
     if ($choice -ne "y" -and $choice -ne "Y") {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { config } from '../config';
 import { useAuth } from './AuthContext';
 import { useRoom } from './RoomContext';
+import { useSupabaseGame } from './SupabaseGameContext';
 
 type Player = 'player1' | 'player2';
 
@@ -18,7 +19,7 @@ interface Message {
   sender: string;
   text: string;
   timestamp: number;
-  type: 'player1' | 'player2' | 'judge';
+  type: 'player1' | 'player2' | 'judge' | 'system';
 }
 
 interface GameContextType {
@@ -50,7 +51,7 @@ interface GameContextType {
   setWinner: React.Dispatch<React.SetStateAction<Player | null>>;
   setSelectedChallenge: React.Dispatch<React.SetStateAction<1 | 2>>;
   setGameTimeoutMinutes: React.Dispatch<React.SetStateAction<number>>;
-  addGameMessage: (sender: string, text: string, type: 'player1' | 'player2' | 'judge') => void;
+  addGameMessage: (sender: string, text: string, type: 'player1' | 'player2' | 'judge' | 'system') => void;
   addConsoleLog: (player: Player, log: string) => void;
   connectPlayer: (playerNum: 1 | 2, playerName: string, challenge: number, roomCode?: string) => void;
   disconnectPlayer: (playerNum: 1 | 2) => void;
@@ -72,6 +73,13 @@ const GameContext = createContext<GameContextType | null>(null);
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { room, role } = useRoom();
+  const {
+    messages: supabaseMessages,
+    sendGameMessage,
+    subscribeToGame,
+    unsubscribeFromGame,
+    clearMessages: clearSupabaseMessages,
+  } = useSupabaseGame();
 
   const [selectedChallenge, setSelectedChallenge] = useState<1 | 2>(1);
   const [gameTimeoutMinutes, setGameTimeoutMinutes] = useState(20);
@@ -98,7 +106,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [timeLeft, setTimeLeft] = useState(20 * 60);
   const [isActive, setIsActive] = useState(false);
   const [winner, setWinner] = useState<Player | null>(null);
-  const [gameMessages, setGameMessages] = useState<Message[]>([]);
   const [player1Console, setPlayer1Console] = useState<string[]>([]);
   const [player2Console, setPlayer2Console] = useState<string[]>([]);
   const [player1Connected, setPlayer1Connected] = useState(false);
@@ -110,24 +117,155 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const player1WsRef = useRef<WebSocket | null>(null);
   const player2WsRef = useRef<WebSocket | null>(null);
+  const currentRoomCodeRef = useRef<string | null>(null);
   const evaluatePlayerScoreRef = useRef<
     (playerNum: 1 | 2, playerName: string, challenge: number) => void
   >(() => {});
+  const addGameMessageRef = useRef<
+    (sender: string, text: string, type: 'player1' | 'player2' | 'judge' | 'system') => void
+  >(() => {});
+  const player1NameRef = useRef<string>('Player 1');
+  const player2NameRef = useRef<string>('Player 2');
+  const player1HasEndedRef = useRef<boolean>(false);
+  const player2HasEndedRef = useRef<boolean>(false);
+  const setCurrentTurnRef = useRef<(turn: Player) => void>(() => {});
 
   const isSpectator = role === 'spectator';
 
+  // Use Supabase messages as game messages
+  const gameMessages = supabaseMessages;
+
+  // Subscribe to game messages when room code is available
+  useEffect(() => {
+    if (room?.code && room.code !== currentRoomCodeRef.current) {
+      console.log('Subscribing to game messages for room:', room.code);
+      currentRoomCodeRef.current = room.code;
+      subscribeToGame(room.code);
+    }
+  }, [room?.code, subscribeToGame]);
+
+  // Listen for turn switch messages from Supabase to sync turn state across browsers
+  useEffect(() => {
+    if (supabaseMessages.length === 0) return;
+
+    const lastMessage = supabaseMessages[supabaseMessages.length - 1];
+    console.log('[Supabase Sync] Last message:', lastMessage);
+
+    // Check if this is a turn switch message
+    if (lastMessage.type === 'system' && lastMessage.sender === 'System') {
+      const text = lastMessage.text;
+      console.log('[Supabase Sync] System message:', text);
+
+      // Detect "It's now {player}'s turn!" messages
+      if (text.includes("'s turn!")) {
+        // Extract player name and determine which turn it is
+        if (text.includes(player1.name) && text.includes("It's now")) {
+          if (currentTurn !== 'player1') {
+            console.log('Syncing turn to player1 from Supabase message');
+            setCurrentTurn('player1');
+          }
+        } else if (text.includes(player2.name) && text.includes("It's now")) {
+          if (currentTurn !== 'player2') {
+            console.log('Syncing turn to player2 from Supabase message');
+            setCurrentTurn('player2');
+          }
+        }
+      }
+
+      // Also sync processing state from "Claude is working" messages
+      if (text.includes('Claude is working on')) {
+        if (text.includes(player1.name)) {
+          setPlayer1Processing(true);
+        } else if (text.includes(player2.name)) {
+          setPlayer2Processing(true);
+        }
+      }
+
+      // Sync processing complete from "Claude finished" messages
+      if (text.includes('Claude finished processing')) {
+        if (text.includes(player1.name)) {
+          setPlayer1Processing(false);
+        } else if (text.includes(player2.name)) {
+          setPlayer2Processing(false);
+        }
+      }
+    }
+
+    // Sync isActive from judge "Challenge begins" message
+    if (lastMessage.type === 'judge' && lastMessage.sender === 'Judge Alpha') {
+      if (lastMessage.text.includes('Challenge') && lastMessage.text.includes('begins!')) {
+        if (!isActive) {
+          console.log('Syncing isActive=true from Judge message');
+          setIsActive(true);
+          // Also reset isReady for both players when game starts
+          setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
+          setPlayer2((prev) => ({ ...prev, isReady: false, prompt: '' }));
+        }
+      }
+    }
+
+    // Sync promptsUsed from prompt submission messages (e.g., "Prompt #3: ...")
+    if ((lastMessage.type === 'player1' || lastMessage.type === 'player2')) {
+      const promptMatch = lastMessage.text.match(/Prompt #(\d+):/);
+      if (promptMatch) {
+        const promptNum = parseInt(promptMatch[1], 10);
+        if (lastMessage.type === 'player1') {
+          setPlayer1((prev) => {
+            if (prev.promptsUsed < promptNum) {
+              console.log(`Syncing player1 promptsUsed to ${promptNum}`);
+              return { ...prev, promptsUsed: promptNum };
+            }
+            return prev;
+          });
+        } else {
+          setPlayer2((prev) => {
+            if (prev.promptsUsed < promptNum) {
+              console.log(`Syncing player2 promptsUsed to ${promptNum}`);
+              return { ...prev, promptsUsed: promptNum };
+            }
+            return prev;
+          });
+        }
+      }
+
+      // Sync hasEnded from "Has ended their prompts early!" messages
+      if (lastMessage.text.includes('Has ended their prompts early!')) {
+        if (lastMessage.type === 'player1') {
+          setPlayer1((prev) => ({ ...prev, hasEnded: true }));
+        } else {
+          setPlayer2((prev) => ({ ...prev, hasEnded: true }));
+        }
+      }
+    }
+  }, [supabaseMessages, player1.name, player2.name, currentTurn, isActive]);
+
   const addGameMessage = useCallback(
-    (sender: string, text: string, type: 'player1' | 'player2' | 'judge') => {
-      const newMessage: Message = {
-        sender,
-        text,
-        timestamp: Date.now(),
-        type,
-      };
-      setGameMessages((prev) => [...prev, newMessage]);
+    (sender: string, text: string, type: 'player1' | 'player2' | 'judge' | 'system') => {
+      const roomCode = currentRoomCodeRef.current || room?.code;
+      if (roomCode) {
+        sendGameMessage(roomCode, sender, text, type);
+      } else {
+        console.warn('Cannot send game message: no room code');
+      }
     },
-    []
+    [room?.code, sendGameMessage]
   );
+
+  // Keep refs updated for use in WebSocket handlers
+  useEffect(() => {
+    addGameMessageRef.current = addGameMessage;
+  }, [addGameMessage]);
+
+  useEffect(() => {
+    player1NameRef.current = player1.name;
+    player2NameRef.current = player2.name;
+    player1HasEndedRef.current = player1.hasEnded;
+    player2HasEndedRef.current = player2.hasEnded;
+  }, [player1.name, player2.name, player1.hasEnded, player2.hasEnded]);
+
+  useEffect(() => {
+    setCurrentTurnRef.current = setCurrentTurn;
+  }, []);
 
   const addConsoleLog = useCallback((player: Player, log: string) => {
     if (player === 'player1') {
@@ -219,13 +357,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             } else if (msg.type === 'processing-started') {
               console.log(`Player ${playerNum} processing started`);
               setProcessing(true);
+              // Broadcast to both players via Supabase
+              const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
+              addGameMessageRef.current('System', `Claude is working on ${pName}'s prompt...`, 'system');
             } else if (msg.type === 'processing-complete') {
               console.log(`Player ${playerNum} processing complete`);
               setProcessing(false);
               setConsole((prev) => [...prev, `[System] Claude finished processing`]);
+              // Broadcast completion to both players
+              const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
+              addGameMessageRef.current('System', `Claude finished processing ${pName}'s prompt`, 'system');
 
               if (msg.playerName && msg.challenge) {
                 evaluatePlayerScoreRef.current(playerNum, msg.playerName, msg.challenge);
+              }
+
+              // Switch turn to the other player after processing completes
+              if (playerNum === 1 && !player2HasEndedRef.current) {
+                setCurrentTurnRef.current('player2');
+                addGameMessageRef.current('System', `It's now ${player2NameRef.current}'s turn!`, 'system');
+              } else if (playerNum === 2 && !player1HasEndedRef.current) {
+                setCurrentTurnRef.current('player1');
+                addGameMessageRef.current('System', `It's now ${player1NameRef.current}'s turn!`, 'system');
               }
             } else if (msg.type === 'exit') {
               setConsole((prev) => [...prev, `[System] Session exited with code: ${msg.exitCode}`]);
@@ -355,32 +508,42 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     (player: Player) => {
       if (player === 'player1' && player1.prompt.trim()) {
         const prompt = player1.prompt.trim();
-        setPlayer1((prev) => ({ ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '' }));
-        addGameMessage(player1.name, `Prompt #${player1.promptsUsed + 1}: "${prompt}"`, 'player1');
+        const newPromptsUsed = player1.promptsUsed + 1;
+        console.log(`[handleSubmit] Player1 submitting prompt #${newPromptsUsed}`);
+
+        setPlayer1((prev) => {
+          console.log(`[handleSubmit] Player1 promptsUsed: ${prev.promptsUsed} -> ${prev.promptsUsed + 1}`);
+          return { ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '' };
+        });
+        addGameMessage(player1.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player1');
 
         setPlayer1Processing(true);
         sendPlayerInput(1, prompt + '\n');
 
+        // Timeout fallback - turn switches after processing completes
         setTimeout(() => setPlayer1Processing(false), 120000);
 
-        if (!player2.hasEnded) {
-          setPlayer2((prev) => ({ ...prev, isReady: false }));
-          setCurrentTurn('player2');
-        }
+        // Don't switch turn here - wait for processing to complete
       } else if (player === 'player2' && player2.prompt.trim()) {
         const prompt = player2.prompt.trim();
-        setPlayer2((prev) => ({ ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '' }));
-        addGameMessage(player2.name, `Prompt #${player2.promptsUsed + 1}: "${prompt}"`, 'player2');
+        const newPromptsUsed = player2.promptsUsed + 1;
+        console.log(`[handleSubmit] Player2 submitting prompt #${newPromptsUsed}`);
+
+        setPlayer2((prev) => {
+          console.log(`[handleSubmit] Player2 promptsUsed: ${prev.promptsUsed} -> ${prev.promptsUsed + 1}`);
+          return { ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '' };
+        });
+        addGameMessage(player2.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player2');
 
         setPlayer2Processing(true);
         sendPlayerInput(2, prompt + '\n');
 
+        // Timeout fallback - turn switches after processing completes
         setTimeout(() => setPlayer2Processing(false), 120000);
 
-        if (!player1.hasEnded) {
-          setPlayer1((prev) => ({ ...prev, isReady: false }));
-          setCurrentTurn('player1');
-        }
+        // Don't switch turn here - wait for processing to complete
+      } else {
+        console.log(`[handleSubmit] No prompt to submit for ${player}. player1.prompt="${player1.prompt}", player2.prompt="${player2.prompt}"`);
       }
     },
     [player1, player2, addGameMessage, sendPlayerInput]
@@ -448,14 +611,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setIsEvaluating(false);
     setWinner(null);
     setCurrentTurn('player1');
-    setGameMessages([]);
+    clearSupabaseMessages();
+    unsubscribeFromGame();
+    currentRoomCodeRef.current = null;
     setPlayer1Console([]);
     setPlayer2Console([]);
     setPlayer1Connected(false);
     setPlayer2Connected(false);
     setPlayer1Processing(false);
     setPlayer2Processing(false);
-  }, [disconnectPlayer]);
+  }, [disconnectPlayer, clearSupabaseMessages, unsubscribeFromGame]);
 
   // Timer countdown
   useEffect(() => {
