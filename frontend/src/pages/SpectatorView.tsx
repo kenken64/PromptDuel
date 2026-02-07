@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
 import { config } from '../config';
 import { Timer } from '../components/Timer';
+import { CombinedChat } from '../components/CombinedChat';
 import { getFinalScore, getMultiplier } from '../gameRules';
 
 interface PlayerState {
@@ -24,8 +25,7 @@ export function SpectatorView() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { token, user } = useAuth();
-  const { room, chatMessages, sendChatMessage, leaveRoom, connectToRoom, disconnectFromRoom } =
-    useRoom();
+  const { room, leaveRoom, connectToRoom, disconnectFromRoom } = useRoom();
 
   const [player1, setPlayer1] = useState<PlayerState>({
     name: 'Player 1',
@@ -47,13 +47,11 @@ export function SpectatorView() {
   const [player1Console, setPlayer1Console] = useState<string[]>([]);
   const [player2Console, setPlayer2Console] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'player1' | 'player2'>('player1');
-  const [chatInput, setChatInput] = useState('');
   const [isFinished, setIsFinished] = useState(false);
 
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
 
   const consoleRef = useRef<HTMLDivElement>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const claudeWsRef = useRef<WebSocket | null>(null);
 
@@ -263,19 +261,6 @@ export function SpectatorView() {
     }
   }, [player1Console, player2Console, activeTab]);
 
-  // Scroll chat to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
-
-  const handleSendChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (chatInput.trim()) {
-      sendChatMessage(chatInput.trim());
-      setChatInput('');
-    }
-  };
-
   const handleLeave = async () => {
     await leaveRoom(code);
     navigate('/lobby');
@@ -437,66 +422,17 @@ export function SpectatorView() {
             </div>
           </div>
 
-          {/* Chat Section */}
-          <div className="nes-container is-dark with-title animate-fade-in animate-delay-4">
-            <p className="title">Chat</p>
-
-            <div className="chat-container mb-4 p-2">
-              {chatMessages.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-4">
-                  No messages yet. Chat with other spectators!
-                </p>
-              ) : (
-                chatMessages.map((msg, idx) => (
-                  <div key={msg.id || idx} className="chat-message">
-                    <span className="username">{msg.username}: </span>
-                    <span className="text-gray-300">{msg.message}</span>
-                  </div>
-                ))
-              )}
-              <div ref={chatEndRef} />
+          {/* Chat & Commentary Section (Read-only for spectators) */}
+          <div className="animate-fade-in animate-delay-4">
+            <CombinedChat messages={gameMessages} />
+            <div
+              className="mt-2 text-center"
+              style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#666' }}
+            >
+              Spectators can view messages only
             </div>
-
-            <form onSubmit={handleSendChat} className="flex gap-2">
-              <input
-                type="text"
-                className="nes-input is-dark flex-1"
-                placeholder="Type a message..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                maxLength={500}
-              />
-              <button type="submit" className="nes-btn is-primary">
-                Send
-              </button>
-            </form>
           </div>
         </div>
-
-        {/* Game Messages */}
-        {gameMessages.length > 0 && (
-          <div className="mt-6 nes-container is-dark with-title">
-            <p className="title">Game Log</p>
-            <div className="h-32 overflow-y-auto">
-              {gameMessages.map((msg, idx) => (
-                <div key={idx} className="chat-message text-xs">
-                  <span
-                    className={
-                      msg.type === 'judge'
-                        ? 'text-yellow-400'
-                        : msg.type === 'player1'
-                          ? 'text-[#209cee]'
-                          : 'text-[#92cc41]'
-                    }
-                  >
-                    {msg.sender}:
-                  </span>{' '}
-                  <span className="text-gray-300">{msg.text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
