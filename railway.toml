@@ -1,0 +1,10 @@
+# Railway configuration for multi-service deployment
+# Each service should be deployed separately pointing to its subdirectory
+
+[build]
+builder = "dockerfile"
+
+[deploy]
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

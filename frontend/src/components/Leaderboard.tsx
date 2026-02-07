@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { config } from '../config';
 
 interface LeaderboardEntry {
   id: number;
@@ -30,8 +31,8 @@ export function Leaderboard({ selectedChallenge, onClose }: LeaderboardProps) {
     setLoading(true);
     try {
       const url = filter === 'all'
-        ? 'http://localhost:3000/leaderboard'
-        : `http://localhost:3000/leaderboard/${filter}`;
+        ? `${config.apiUrl}/leaderboard`
+        : `${config.apiUrl}/leaderboard/${filter}`;
       const response = await fetch(url);
       const data = await response.json();
       setEntries(data);

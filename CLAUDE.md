@@ -89,3 +89,36 @@ cd backend && bun run db:setup
 - `frontend/src/components/UnifiedPromptArea.tsx` - Prompt input and turn management
 - `claude-code-server/index.js` - PTY WebSocket server
 - `backend/src/db/schema.ts` - Database schema
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+| Variable | Service | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | claude-code-server | Required for Claude CLI auth |
+| `DATABASE_URL` | backend | SQLite database path |
+| `WORKSPACES_DIR` | claude-code-server | Player workspace directory |
+| `VITE_API_URL` | frontend | Backend API URL |
+| `VITE_WS_URL` | frontend | WebSocket server URL |
+
+## Docker Deployment
+
+```bash
+# Build and run all services
+docker-compose up --build
+
+# Access at http://localhost
+```
+
+## Railway Deployment
+
+See [RAILWAY.md](./RAILWAY.md) for detailed deployment instructions.
+
+**Quick overview - 3 services required:**
+
+| Service | Directory | Volume |
+|---------|-----------|--------|
+| Frontend | `frontend/` | No |
+| Backend | `backend/` | `/app/data` |
+| Claude Code Server | `claude-code-server/` | `/app/workspaces`

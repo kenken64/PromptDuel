@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-
-const CLAUDE_CODE_SERVER_URL = 'ws://localhost:3001';
+import { config } from '../config';
 
 interface SessionInfo {
   sessionId: string;
@@ -53,7 +52,7 @@ export function useClaudeCodeServer({
     setOutput([]);
 
     try {
-      const ws = new WebSocket(CLAUDE_CODE_SERVER_URL);
+      const ws = new WebSocket(config.wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

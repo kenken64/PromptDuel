@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Leaderboard } from './Leaderboard';
 import { getFinalScore, getMultiplier } from '../gameRules';
+import { config } from '../config';
 
 type Player = 'player1' | 'player2';
 
@@ -122,13 +123,13 @@ export function DuelResults({
             promptsUsed: player2.promptsUsed,
           };
 
-      await fetch('http://localhost:3000/leaderboard', {
+      await fetch(`${config.apiUrl}/leaderboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(p1Data),
       });
 
-      await fetch('http://localhost:3000/leaderboard', {
+      await fetch(`${config.apiUrl}/leaderboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(p2Data),

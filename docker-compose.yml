@@ -20,14 +20,34 @@ services:
       retries: 3
       start_period: 40s
 
+  claude-code-server:
+    build:
+      context: ./claude-code-server
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    volumes:
+      - workspaces:/app/workspaces
+    environment:
+      - NODE_ENV=production
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - WORKSPACES_DIR=/app/workspaces
+    restart: unless-stopped
+    depends_on:
+      - backend
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:3000}
+        - VITE_WS_URL=${VITE_WS_URL:-ws://localhost:3001}
     ports:
       - "80:80"
     depends_on:
       - backend
+      - claude-code-server
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80"]
@@ -38,4 +58,6 @@ services:
 
 volumes:
   backend-data:
+    driver: local
+  workspaces:
     driver: local

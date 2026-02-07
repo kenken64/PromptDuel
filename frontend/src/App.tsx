@@ -7,11 +7,10 @@ import { InfoTabs } from './components/InfoTabs';
 import { LandingPage } from './components/LandingPage';
 import { GroupSetup } from './components/GroupSetup';
 import { getFinalScore, getMultiplier } from './gameRules';
+import { config } from './config';
 
 type Player = 'player1' | 'player2';
 type AppScreen = 'landing' | 'group-setup' | 'game' | 'results';
-
-const CLAUDE_CODE_SERVER_URL = 'ws://localhost:3001';
 
 interface PlayerState {
   name: string;
@@ -85,7 +84,7 @@ export default function App() {
     }
 
     try {
-      const ws = new WebSocket(CLAUDE_CODE_SERVER_URL);
+      const ws = new WebSocket(config.wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -181,7 +180,7 @@ export default function App() {
   // Evaluate a single player's workspace and update their score
   const evaluatePlayerScore = useCallback(async (playerNum: 1 | 2, playerName: string, challenge: number) => {
     try {
-      const response = await fetch('http://localhost:3000/evaluate-player', {
+      const response = await fetch(`${config.apiUrl}/evaluate-player`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerName, challenge }),
@@ -351,7 +350,7 @@ export default function App() {
   const runEvaluation = async () => {
     setIsEvaluating(true);
     try {
-      const response = await fetch('http://localhost:3000/evaluate', {
+      const response = await fetch(`${config.apiUrl}/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
