@@ -41,13 +41,26 @@ export function UnifiedPromptArea({
   const isProcessing = player1Processing || player2Processing;
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
 
+  // The player data for the current user (for showing their own stats)
+  const myPlayer = currentUserPlayer === 'player1' ? player1 : currentUserPlayer === 'player2' ? player2 : null;
+
   // Can only edit if it's your turn (currentUserPlayer matches currentTurn)
   const canEdit = !readOnly && currentUserPlayer === currentTurn;
+
+  // Debug logging
+  console.log('[UnifiedPromptArea] Debug:', {
+    currentUserPlayer,
+    currentTurn,
+    canEdit,
+    isActive,
+    readOnly,
+    isProcessing,
+    'currentPlayer.hasEnded': currentPlayer.hasEnded,
+    'currentPlayer.promptsUsed': currentPlayer.promptsUsed,
+  });
   const isPlayer1Turn = currentTurn === 'player1';
   const charsLeft = MAX_PROMPT_CHARS - currentPlayer.prompt.length;
   const isOverLimit = charsLeft < 0;
-  const currentMultiplier = getMultiplier(currentPlayer.promptsUsed);
-  const nextMultiplier = getMultiplier(currentPlayer.promptsUsed + 1);
 
   return (
     <div className="nes-container is-dark with-title" style={{ position: 'relative' }}>
@@ -181,8 +194,8 @@ export function UnifiedPromptArea({
               </span>
             )}
           </div>
-          <div style={{ color: currentPlayer.promptsUsed >= MAX_PROMPTS ? '#e76e55' : undefined }}>
-            Remaining: {MAX_PROMPTS - currentPlayer.promptsUsed}
+          <div style={{ color: (myPlayer?.promptsUsed ?? 0) >= MAX_PROMPTS ? '#e76e55' : undefined }}>
+            Your Remaining: {MAX_PROMPTS - (myPlayer?.promptsUsed ?? 0)}
           </div>
         </div>
 
@@ -233,7 +246,7 @@ export function UnifiedPromptArea({
       </button>
 
       {/* End Prompts Early Button - only show when it's your turn */}
-      {canEdit && isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed > 0 && (
+      {canEdit && isActive && myPlayer && !myPlayer.hasEnded && myPlayer.promptsUsed > 0 && (
         <button
           onClick={() => onEndPrompts(currentTurn)}
           disabled={isProcessing}
@@ -247,12 +260,12 @@ export function UnifiedPromptArea({
             opacity: isProcessing ? 0.5 : 1,
           }}
         >
-          {isProcessing ? 'Claude is working...' : `End My Prompts Early (${currentPlayer.promptsUsed}/7 used)`}
+          {isProcessing ? 'Claude is working...' : `End My Prompts Early (${myPlayer.promptsUsed}/7 used)`}
         </button>
       )}
 
-      {/* Multiplier Info */}
-      {isActive && !currentPlayer.hasEnded && currentPlayer.promptsUsed < MAX_PROMPTS && (
+      {/* Multiplier Info - show YOUR stats, not the current turn player's */}
+      {isActive && myPlayer && !myPlayer.hasEnded && myPlayer.promptsUsed < MAX_PROMPTS && (
         <div
           className="nes-container is-dark"
           style={{
@@ -264,16 +277,16 @@ export function UnifiedPromptArea({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div>
-              <span style={{ color: '#f7d51d' }}>Current multiplier: </span>
+              <span style={{ color: '#f7d51d' }}>Your multiplier: </span>
               <span style={{
-                color: currentMultiplier >= 0.85 ? '#92cc41' : currentMultiplier >= 0.5 ? '#f7d51d' : '#e76e55',
+                color: getMultiplier(myPlayer.promptsUsed) >= 0.85 ? '#92cc41' : getMultiplier(myPlayer.promptsUsed) >= 0.5 ? '#f7d51d' : '#e76e55',
                 fontWeight: 'bold',
               }}>
-                {currentMultiplier > 0 ? `×${currentMultiplier}` : '---'}
+                {myPlayer.promptsUsed > 0 ? `×${getMultiplier(myPlayer.promptsUsed)}` : '---'}
               </span>
-              {currentPlayer.promptsUsed > 0 && currentPlayer.promptsUsed < MAX_PROMPTS && (
+              {myPlayer.promptsUsed > 0 && myPlayer.promptsUsed < MAX_PROMPTS && (
                 <span style={{ color: '#888', marginLeft: '0.8rem' }}>
-                  Next prompt: ×{nextMultiplier}
+                  Next prompt: ×{getMultiplier(myPlayer.promptsUsed + 1)}
                 </span>
               )}
             </div>
@@ -288,9 +301,9 @@ export function UnifiedPromptArea({
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: 'clamp(0.3rem, 1.2vw, 0.4rem)',
-                    border: `2px solid ${Number(n) <= currentPlayer.promptsUsed ? '#92cc41' : '#444'}`,
-                    color: Number(n) <= currentPlayer.promptsUsed ? '#92cc41' : '#666',
-                    backgroundColor: Number(n) === currentPlayer.promptsUsed + 1 ? '#333' : 'transparent',
+                    border: `2px solid ${Number(n) <= myPlayer.promptsUsed ? '#92cc41' : '#444'}`,
+                    color: Number(n) <= myPlayer.promptsUsed ? '#92cc41' : '#666',
+                    backgroundColor: Number(n) === myPlayer.promptsUsed + 1 ? '#333' : 'transparent',
                   }}
                 >
                   {n}

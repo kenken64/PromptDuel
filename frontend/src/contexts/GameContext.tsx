@@ -39,6 +39,7 @@ interface GameContextType {
   player2Processing: boolean;
   evaluationResults: any;
   isEvaluating: boolean;
+  shouldNavigateToResults: boolean;
   selectedChallenge: 1 | 2;
   gameTimeoutMinutes: number;
 
@@ -72,7 +73,7 @@ const GameContext = createContext<GameContextType | null>(null);
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { room, role } = useRoom();
+  const { room, role, finishRoom } = useRoom();
   const {
     messages: supabaseMessages,
     sendGameMessage,
@@ -114,6 +115,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [player1Processing, setPlayer1Processing] = useState(false);
   const [player2Processing, setPlayer2Processing] = useState(false);
+  const [shouldNavigateToResults, setShouldNavigateToResults] = useState(false);
 
   const player1WsRef = useRef<WebSocket | null>(null);
   const player2WsRef = useRef<WebSocket | null>(null);
@@ -129,6 +131,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const player1HasEndedRef = useRef<boolean>(false);
   const player2HasEndedRef = useRef<boolean>(false);
   const setCurrentTurnRef = useRef<(turn: Player) => void>(() => {});
+  const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  const gameEndedRef = useRef<boolean>(false);
 
   const isSpectator = role === 'spectator';
 
@@ -140,104 +144,183 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (room?.code && room.code !== currentRoomCodeRef.current) {
       console.log('Subscribing to game messages for room:', room.code);
       currentRoomCodeRef.current = room.code;
+      // Reset game state for new room
+      gameEndedRef.current = false;
+      processedMessageIdsRef.current = new Set();
       subscribeToGame(room.code);
     }
   }, [room?.code, subscribeToGame]);
 
   // Listen for turn switch messages from Supabase to sync turn state across browsers
+  // IMPORTANT: Process ALL new messages, not just the last one, to avoid missing turn switches
   useEffect(() => {
     if (supabaseMessages.length === 0) return;
 
-    const lastMessage = supabaseMessages[supabaseMessages.length - 1];
-    console.log('[Supabase Sync] Last message:', lastMessage);
+    // Check if ANY message contains GAME_END - if so, mark game as ended
+    const hasGameEndMessage = supabaseMessages.some(
+      (msg) => msg.type === 'system' && msg.sender === 'System' && msg.text.startsWith('GAME_END')
+    );
+    if (hasGameEndMessage) {
+      gameEndedRef.current = true;
+    }
 
-    // Check if this is a turn switch message
-    if (lastMessage.type === 'system' && lastMessage.sender === 'System') {
-      const text = lastMessage.text;
-      console.log('[Supabase Sync] System message:', text);
+    // Process all messages that haven't been processed yet
+    for (const message of supabaseMessages) {
+      // Create a unique ID for each message based on timestamp and content
+      const messageId = `${message.timestamp}-${message.sender}-${message.text.substring(0, 50)}`;
 
-      // Detect "It's now {player}'s turn!" messages
-      if (text.includes("'s turn!")) {
-        // Extract player name and determine which turn it is
-        if (text.includes(player1.name) && text.includes("It's now")) {
-          if (currentTurn !== 'player1') {
-            console.log('Syncing turn to player1 from Supabase message');
+      // Skip if already processed
+      if (processedMessageIdsRef.current.has(messageId)) {
+        continue;
+      }
+
+      // Mark as processed
+      processedMessageIdsRef.current.add(messageId);
+      console.log('[Supabase Sync] Processing message:', message);
+
+      // Check if this is a system message
+      if (message.type === 'system' && message.sender === 'System') {
+        const text = message.text;
+        console.log('[Supabase Sync] System message:', text);
+
+        // Detect turn switch messages with TURN:player1 or TURN:player2 prefix
+        if (text.startsWith('TURN:')) {
+          console.log('[Supabase Sync] Turn switch message detected:', text);
+
+          if (text.startsWith('TURN:player1')) {
+            console.log('[Supabase Sync] Switching turn to player1');
             setCurrentTurn('player1');
-          }
-        } else if (text.includes(player2.name) && text.includes("It's now")) {
-          if (currentTurn !== 'player2') {
-            console.log('Syncing turn to player2 from Supabase message');
+          } else if (text.startsWith('TURN:player2')) {
+            console.log('[Supabase Sync] Switching turn to player2');
             setCurrentTurn('player2');
           }
         }
-      }
 
-      // Also sync processing state from "Claude is working" messages
-      if (text.includes('Claude is working on')) {
-        if (text.includes(player1.name)) {
-          setPlayer1Processing(true);
-        } else if (text.includes(player2.name)) {
-          setPlayer2Processing(true);
-        }
-      }
+        // NOTE: Don't sync "Claude is working on" messages - only the local WebSocket
+        // should set processing to true. Supabase sync can set it to false (see below).
+        // This prevents race conditions where messages arrive out of order.
 
-      // Sync processing complete from "Claude finished" messages
-      if (text.includes('Claude finished processing')) {
-        if (text.includes(player1.name)) {
+        // Sync processing complete from "Claude finished" messages
+        if (text.includes('Claude finished processing')) {
+          console.log('[Supabase Sync] Processing complete message detected - resetting ALL processing states');
+          // Reset both processing states to be safe
           setPlayer1Processing(false);
-        } else if (text.includes(player2.name)) {
           setPlayer2Processing(false);
         }
-      }
-    }
 
-    // Sync isActive from judge "Challenge begins" message
-    if (lastMessage.type === 'judge' && lastMessage.sender === 'Judge Alpha') {
-      if (lastMessage.text.includes('Challenge') && lastMessage.text.includes('begins!')) {
-        if (!isActive) {
-          console.log('Syncing isActive=true from Judge message');
-          setIsActive(true);
-          // Also reset isReady for both players when game starts
-          setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
-          setPlayer2((prev) => ({ ...prev, isReady: false, prompt: '' }));
+        // Handle GAME_END message - host ended the duel
+        if (text.startsWith('GAME_END')) {
+          console.log('[Supabase Sync] Game end detected - stopping game and triggering navigation');
+          gameEndedRef.current = true;
+          setIsActive(false);
+          setPlayer1Processing(false);
+          setPlayer2Processing(false);
+          // Signal that we should navigate to results (for player 2 who receives this via Supabase)
+          setShouldNavigateToResults(true);
         }
-      }
-    }
 
-    // Sync promptsUsed from prompt submission messages (e.g., "Prompt #3: ...")
-    if ((lastMessage.type === 'player1' || lastMessage.type === 'player2')) {
-      const promptMatch = lastMessage.text.match(/Prompt #(\d+):/);
-      if (promptMatch) {
-        const promptNum = parseInt(promptMatch[1], 10);
-        if (lastMessage.type === 'player1') {
-          setPlayer1((prev) => {
-            if (prev.promptsUsed < promptNum) {
-              console.log(`Syncing player1 promptsUsed to ${promptNum}`);
-              return { ...prev, promptsUsed: promptNum };
+        // Sync score updates from SCORE_UPDATE messages
+        if (text.startsWith('SCORE_UPDATE:')) {
+          const parts = text.split(':');
+          if (parts.length >= 3) {
+            const playerKey = parts[1];
+            const score = parseInt(parts[2], 10);
+            const promptsUsed = parts.length >= 4 ? parseInt(parts[3], 10) : undefined;
+            console.log(`[Supabase Sync] Score update: ${playerKey} = ${score}, promptsUsed = ${promptsUsed}`);
+            if (playerKey === 'player1') {
+              setPlayer1((prev) => {
+                const updates: any = {};
+                if (prev.score !== score) {
+                  console.log(`Syncing player1 score to ${score}`);
+                  updates.score = score;
+                }
+                if (promptsUsed !== undefined && prev.promptsUsed < promptsUsed) {
+                  console.log(`Syncing player1 promptsUsed to ${promptsUsed}`);
+                  updates.promptsUsed = promptsUsed;
+                }
+                if (Object.keys(updates).length > 0) {
+                  return { ...prev, ...updates };
+                }
+                return prev;
+              });
+            } else if (playerKey === 'player2') {
+              setPlayer2((prev) => {
+                const updates: any = {};
+                if (prev.score !== score) {
+                  console.log(`Syncing player2 score to ${score}`);
+                  updates.score = score;
+                }
+                if (promptsUsed !== undefined && prev.promptsUsed < promptsUsed) {
+                  console.log(`Syncing player2 promptsUsed to ${promptsUsed}`);
+                  updates.promptsUsed = promptsUsed;
+                }
+                if (Object.keys(updates).length > 0) {
+                  return { ...prev, ...updates };
+                }
+                return prev;
+              });
             }
-            return prev;
-          });
-        } else {
-          setPlayer2((prev) => {
-            if (prev.promptsUsed < promptNum) {
-              console.log(`Syncing player2 promptsUsed to ${promptNum}`);
-              return { ...prev, promptsUsed: promptNum };
-            }
-            return prev;
-          });
+          }
         }
       }
 
-      // Sync hasEnded from "Has ended their prompts early!" messages
-      if (lastMessage.text.includes('Has ended their prompts early!')) {
-        if (lastMessage.type === 'player1') {
-          setPlayer1((prev) => ({ ...prev, hasEnded: true }));
-        } else {
-          setPlayer2((prev) => ({ ...prev, hasEnded: true }));
+      // Sync isActive from judge "Challenge begins" message
+      // BUT only if the game hasn't been ended yet
+      if (message.type === 'judge' && message.sender === 'Judge Alpha') {
+        if (message.text.includes('Challenge') && message.text.includes('begins!')) {
+          if (!gameEndedRef.current) {
+            console.log('Syncing isActive=true from Judge message');
+            setIsActive(true);
+            // Also reset isReady for both players when game starts
+            setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
+            setPlayer2((prev) => ({ ...prev, isReady: false, prompt: '' }));
+          } else {
+            console.log('Ignoring "begins" message - game has already ended');
+          }
+        }
+      }
+
+      // Sync promptsUsed from prompt submission messages (e.g., "Prompt #3: ...")
+      if ((message.type === 'player1' || message.type === 'player2')) {
+        const promptMatch = message.text.match(/Prompt #(\d+):/);
+        if (promptMatch) {
+          const promptNum = parseInt(promptMatch[1], 10);
+          if (message.type === 'player1') {
+            setPlayer1((prev) => {
+              if (prev.promptsUsed < promptNum) {
+                console.log(`Syncing player1 promptsUsed to ${promptNum}`);
+                return { ...prev, promptsUsed: promptNum };
+              }
+              return prev;
+            });
+          } else {
+            setPlayer2((prev) => {
+              if (prev.promptsUsed < promptNum) {
+                console.log(`Syncing player2 promptsUsed to ${promptNum}`);
+                return { ...prev, promptsUsed: promptNum };
+              }
+              return prev;
+            });
+          }
+        }
+
+        // Sync hasEnded from "Has ended their prompts early!" messages
+        if (message.text.includes('Has ended their prompts early!')) {
+          if (message.type === 'player1') {
+            setPlayer1((prev) => ({ ...prev, hasEnded: true }));
+          } else {
+            setPlayer2((prev) => ({ ...prev, hasEnded: true }));
+          }
         }
       }
     }
-  }, [supabaseMessages, player1.name, player2.name, currentTurn, isActive]);
+
+    // Limit the size of processed message IDs to prevent memory issues
+    if (processedMessageIdsRef.current.size > 500) {
+      const idsArray = Array.from(processedMessageIdsRef.current);
+      processedMessageIdsRef.current = new Set(idsArray.slice(-250));
+    }
+  }, [supabaseMessages]);
 
   const addGameMessage = useCallback(
     (sender: string, text: string, type: 'player1' | 'player2' | 'judge' | 'system') => {
@@ -256,12 +339,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     addGameMessageRef.current = addGameMessage;
   }, [addGameMessage]);
 
+  // Refs for promptsUsed
+  const player1PromptsUsedRef = useRef<number>(0);
+  const player2PromptsUsedRef = useRef<number>(0);
+
   useEffect(() => {
     player1NameRef.current = player1.name;
     player2NameRef.current = player2.name;
     player1HasEndedRef.current = player1.hasEnded;
     player2HasEndedRef.current = player2.hasEnded;
-  }, [player1.name, player2.name, player1.hasEnded, player2.hasEnded]);
+    player1PromptsUsedRef.current = player1.promptsUsed;
+    player2PromptsUsedRef.current = player2.promptsUsed;
+  }, [player1.name, player2.name, player1.hasEnded, player2.hasEnded, player1.promptsUsed, player2.promptsUsed]);
 
   useEffect(() => {
     setCurrentTurnRef.current = setCurrentTurn;
@@ -298,6 +387,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             `[Score] ${playerName}: ${result.totalScore}/${result.maxScore} (${result.percentage}%) - Grade: ${result.grade}`,
           ]);
+
+          // Broadcast score update via Supabase so both players see the score
+          const playerKey = playerNum === 1 ? 'player1' : 'player2';
+          const promptsUsed = playerNum === 1 ? player1PromptsUsedRef.current : player2PromptsUsedRef.current;
+          console.log(`[evaluatePlayerScore] Broadcasting score: ${playerKey}, score=${result.totalScore}, promptsUsed=${promptsUsed}`);
+          addGameMessageRef.current(
+            'System',
+            `SCORE_UPDATE:${playerKey}:${result.totalScore}:${promptsUsed}`,
+            'system'
+          );
         }
       } catch (error) {
         console.error('Failed to evaluate player:', error);
@@ -317,9 +416,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const setConsole = playerNum === 1 ? setPlayer1Console : setPlayer2Console;
       const setProcessing = playerNum === 1 ? setPlayer1Processing : setPlayer2Processing;
 
+      console.log(`[connectPlayer] Player ${playerNum} connecting to room ${roomCode}`);
+      console.log(`[connectPlayer] Current room: ${currentRoomCodeRef.current}`);
+      console.log(`[connectPlayer] WebSocket exists: ${!!wsRef.current}, readyState: ${wsRef.current?.readyState}`);
+
+      // If room code changed, close existing connection
+      if (roomCode && currentRoomCodeRef.current && currentRoomCodeRef.current !== roomCode) {
+        console.log(`[connectPlayer] Room changed from ${currentRoomCodeRef.current} to ${roomCode}, closing old connection`);
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        setConnected(false);
+      }
+
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        console.log(`Player ${playerNum} already connected`);
+        console.log(`Player ${playerNum} already connected to room ${roomCode}`);
         return;
+      }
+
+      // Update room code
+      if (roomCode) {
+        currentRoomCodeRef.current = roomCode;
       }
 
       try {
@@ -362,23 +480,37 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               addGameMessageRef.current('System', `Claude is working on ${pName}'s prompt...`, 'system');
             } else if (msg.type === 'processing-complete') {
               console.log(`Player ${playerNum} processing complete`);
+              console.log(`[processing-complete] msg:`, msg);
               setProcessing(false);
               setConsole((prev) => [...prev, `[System] Claude finished processing`]);
               // Broadcast completion to both players
               const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
               addGameMessageRef.current('System', `Claude finished processing ${pName}'s prompt`, 'system');
 
+              console.log(`[processing-complete] playerName=${msg.playerName}, challenge=${msg.challenge}`);
               if (msg.playerName && msg.challenge) {
+                console.log(`[processing-complete] Calling evaluatePlayerScore for player ${playerNum}`);
                 evaluatePlayerScoreRef.current(playerNum, msg.playerName, msg.challenge);
+              } else {
+                console.log(`[processing-complete] Missing playerName or challenge, not evaluating score`);
               }
 
               // Switch turn to the other player after processing completes
+              console.log(`[processing-complete] Checking turn switch: playerNum=${playerNum}, player2HasEnded=${player2HasEndedRef.current}, player1HasEnded=${player1HasEndedRef.current}`);
               if (playerNum === 1 && !player2HasEndedRef.current) {
+                console.log(`[processing-complete] Switching turn to player2 (${player2NameRef.current})`);
                 setCurrentTurnRef.current('player2');
-                addGameMessageRef.current('System', `It's now ${player2NameRef.current}'s turn!`, 'system');
+                // Include TURN:player2 for reliable syncing
+                addGameMessageRef.current('System', `TURN:player2 It's now ${player2NameRef.current}'s turn!`, 'system');
+                console.log(`[processing-complete] Turn switch message sent`);
               } else if (playerNum === 2 && !player1HasEndedRef.current) {
+                console.log(`[processing-complete] Switching turn to player1 (${player1NameRef.current})`);
                 setCurrentTurnRef.current('player1');
-                addGameMessageRef.current('System', `It's now ${player1NameRef.current}'s turn!`, 'system');
+                // Include TURN:player1 for reliable syncing
+                addGameMessageRef.current('System', `TURN:player1 It's now ${player1NameRef.current}'s turn!`, 'system');
+                console.log(`[processing-complete] Turn switch message sent`);
+              } else {
+                console.log(`[processing-complete] Not switching turn`);
               }
             } else if (msg.type === 'exit') {
               setConsole((prev) => [...prev, `[System] Session exited with code: ${msg.exitCode}`]);
@@ -427,12 +559,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const sendPlayerInput = useCallback((playerNum: 1 | 2, input: string) => {
     const wsRef = playerNum === 1 ? player1WsRef : player2WsRef;
+    console.log(`[sendPlayerInput] Player ${playerNum} attempting to send input`);
+    console.log(`[sendPlayerInput] WebSocket exists: ${!!wsRef.current}`);
+    console.log(`[sendPlayerInput] WebSocket readyState: ${wsRef.current?.readyState} (OPEN=1)`);
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log(`[sendPlayerInput] Sending input: "${input.substring(0, 50)}..."`);
       wsRef.current.send(JSON.stringify({ type: 'input', data: input }));
+      console.log(`[sendPlayerInput] Input sent successfully`);
+    } else {
+      console.error(`[sendPlayerInput] FAILED - WebSocket not connected!`);
     }
   }, []);
 
   const startDuel = useCallback(() => {
+    // Reset game ended flag for new game
+    gameEndedRef.current = false;
     setIsActive(true);
     setTimeLeft(gameTimeoutMinutes * 60);
     setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
@@ -444,7 +586,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     );
   }, [gameTimeoutMinutes, selectedChallenge, addGameMessage]);
 
-  const runEvaluation = useCallback(async () => {
+  const runEvaluation = useCallback(async (forfeitByHost: boolean = false) => {
     setIsEvaluating(true);
     try {
       const response = await fetch(`${config.apiUrl}/evaluate`, {
@@ -464,12 +606,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setPlayer1((prev) => ({ ...prev, score: results.player1.totalScore }));
         setPlayer2((prev) => ({ ...prev, score: results.player2.totalScore }));
 
-        // Import game rules for final score calculation
-        const { getFinalScore } = await import('../gameRules');
-        const p1Final = getFinalScore(results.player1.totalScore, player1.promptsUsed);
-        const p2Final = getFinalScore(results.player2.totalScore, player2.promptsUsed);
-        const evalWinner =
-          p1Final > p2Final ? ('player1' as const) : p2Final > p1Final ? ('player2' as const) : null;
+        let evalWinner: 'player1' | 'player2' | null;
+        let winnerReason = '';
+
+        // If host (player 1) forfeited by ending duel early, player 2 wins
+        if (forfeitByHost) {
+          evalWinner = 'player2';
+          winnerReason = ' by forfeit (host ended duel early)';
+        } else {
+          // Normal evaluation - compare final scores
+          const { getFinalScore } = await import('../gameRules');
+          const p1Final = getFinalScore(results.player1.totalScore, player1.promptsUsed);
+          const p2Final = getFinalScore(results.player2.totalScore, player2.promptsUsed);
+          evalWinner =
+            p1Final > p2Final ? ('player1' as const) : p2Final > p1Final ? ('player2' as const) : null;
+        }
+
         setWinner(evalWinner);
         const winnerName =
           evalWinner === 'player1'
@@ -479,9 +631,73 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               : null;
         addGameMessage(
           'Judge Alpha',
-          `Evaluation complete! ${winnerName ? `${winnerName} wins!` : "It's a tie!"}`,
+          `Evaluation complete! ${winnerName ? `${winnerName} wins${winnerReason}!` : "It's a tie!"}`,
           'judge'
         );
+
+        // Save results to localStorage for the Results page to read
+        const gameResults = {
+          player1: {
+            name: player1.name,
+            score: results.player1.totalScore,
+            promptsUsed: player1.promptsUsed,
+          },
+          player2: {
+            name: player2.name,
+            score: results.player2.totalScore,
+            promptsUsed: player2.promptsUsed,
+          },
+          winner: evalWinner,
+          evaluationResults: results,
+          challenge: selectedChallenge,
+          roomCode: room?.code,
+        };
+        console.log('Saving game results to localStorage:', gameResults);
+        localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
+
+        // Save both players to leaderboard
+        try {
+          const saveToLeaderboard = async (playerName: string, result: any, promptsUsed: number) => {
+            await fetch(`${config.apiUrl}/leaderboard`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                playerName,
+                challenge: selectedChallenge,
+                score: result.totalScore,
+                maxScore: result.maxScore,
+                percentage: result.percentage,
+                grade: result.grade,
+                promptsUsed,
+              }),
+            });
+          };
+
+          await Promise.all([
+            saveToLeaderboard(player1.name, results.player1, player1.promptsUsed),
+            saveToLeaderboard(player2.name, results.player2, player2.promptsUsed),
+          ]);
+          console.log('Leaderboard entries saved successfully');
+        } catch (leaderboardError) {
+          console.error('Failed to save leaderboard entries:', leaderboardError);
+        }
+
+        // Mark the room as finished and navigate to results
+        console.log('Calling finishRoom after successful evaluation');
+        const finishResult = await finishRoom(room?.code);
+        console.log('finishRoom result:', finishResult);
+
+        // Navigate to results page directly since useEffect might not trigger
+        const roomCode = room?.code || gameResults.roomCode;
+        if (roomCode) {
+          console.log('Navigating to results page with code:', roomCode);
+          // Small delay to ensure state updates are processed
+          setTimeout(() => {
+            window.location.href = `/results/${roomCode}`;
+          }, 500);
+        } else {
+          console.error('No room code available for navigation!');
+        }
       } else {
         addGameMessage('Judge Alpha', 'Evaluation failed. Please check the workspaces.', 'judge');
       }
@@ -490,7 +706,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       addGameMessage('Judge Alpha', 'Could not connect to evaluation server.', 'judge');
     }
     setIsEvaluating(false);
-  }, [player1.name, player1.promptsUsed, player2.name, player2.promptsUsed, selectedChallenge, addGameMessage]);
+  }, [player1.name, player1.promptsUsed, player2.name, player2.promptsUsed, selectedChallenge, addGameMessage, finishRoom, room?.code]);
 
   const handleTimeUp = useCallback(() => {
     setIsActive(false);
@@ -499,10 +715,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [addGameMessage, runEvaluation]);
 
   const handleEndDuel = useCallback(async () => {
+    console.log('[handleEndDuel] Ending game...');
+    gameEndedRef.current = true;
     setIsActive(false);
-    addGameMessage('Judge Alpha', 'Duel ended! Evaluating both workspaces...', 'judge');
-    await runEvaluation();
-  }, [addGameMessage, runEvaluation]);
+
+    // Check if player 2 has already ended their prompts
+    // If so, no penalty for host ending early
+    const isForfeit = !player2.hasEnded;
+
+    // Broadcast GAME_END to notify all players
+    addGameMessage('System', 'GAME_END Host ended the duel!', 'system');
+
+    if (isForfeit) {
+      addGameMessage('Judge Alpha', 'Host ended the duel early - Player 2 wins by forfeit! Evaluating workspaces...', 'judge');
+    } else {
+      addGameMessage('Judge Alpha', 'Duel ended! Both players finished - Evaluating workspaces...', 'judge');
+    }
+
+    await runEvaluation(isForfeit);
+  }, [addGameMessage, runEvaluation, player2.hasEnded]);
 
   const handleSubmit = useCallback(
     (player: Player) => {
@@ -563,6 +794,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         if (currentTurn === 'player1' && !player2.hasEnded) {
           setCurrentTurn('player2');
+          // Broadcast turn switch via Supabase
+          addGameMessage('System', `TURN:player2 It's now ${player2.name}'s turn!`, 'system');
         }
 
         if (player2.hasEnded) {
@@ -574,6 +807,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         if (currentTurn === 'player2' && !player1.hasEnded) {
           setCurrentTurn('player1');
+          // Broadcast turn switch via Supabase
+          addGameMessage('System', `TURN:player1 It's now ${player1.name}'s turn!`, 'system');
         }
 
         if (player1.hasEnded) {
@@ -614,12 +849,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     clearSupabaseMessages();
     unsubscribeFromGame();
     currentRoomCodeRef.current = null;
+    processedMessageIdsRef.current = new Set();
+    gameEndedRef.current = false;
     setPlayer1Console([]);
     setPlayer2Console([]);
     setPlayer1Connected(false);
     setPlayer2Connected(false);
     setPlayer1Processing(false);
     setPlayer2Processing(false);
+    setShouldNavigateToResults(false);
   }, [disconnectPlayer, clearSupabaseMessages, unsubscribeFromGame]);
 
   // Timer countdown
@@ -661,6 +899,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         player2Processing,
         evaluationResults,
         isEvaluating,
+        shouldNavigateToResults,
         selectedChallenge,
         gameTimeoutMinutes,
         setPlayer1,

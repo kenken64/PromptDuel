@@ -45,6 +45,7 @@ interface RoomContextType {
   joinRoom: (code: string) => Promise<{ success: boolean; error?: string }>;
   spectateRoom: (code: string) => Promise<{ success: boolean; error?: string }>;
   leaveRoom: (roomCode?: string) => Promise<void>;
+  finishRoom: (roomCode?: string) => Promise<{ success: boolean } | undefined>;
   toggleReady: () => Promise<void>;
   startGame: () => Promise<{ success: boolean; error?: string }>;
   sendChatMessage: (message: string) => void;
@@ -442,6 +443,31 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
     disconnectWebSocket();
   };
 
+  const finishRoom = async (roomCode?: string) => {
+    const code = roomCode || room?.code;
+    if (!token || !code) return;
+
+    try {
+      const response = await fetch(`${config.apiUrl}/rooms/${code}/finish`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json();
+      console.log('Finish room response:', data);
+
+      if (data.success) {
+        // Update local room status
+        setRoom((prev) => prev ? { ...prev, status: 'finished' } : null);
+      }
+      return data;
+    } catch (error) {
+      console.error('Finish room error:', error);
+      return { success: false };
+    }
+  };
+
   const toggleReady = async () => {
     if (!token) return;
 
@@ -607,6 +633,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
         joinRoom,
         spectateRoom,
         leaveRoom,
+        finishRoom,
         toggleReady,
         startGame,
         sendChatMessage,

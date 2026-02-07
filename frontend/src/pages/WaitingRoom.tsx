@@ -309,8 +309,17 @@ export function WaitingRoom() {
             {/* Start Game Button - only for host when both ready */}
             {isHost && bothPlayersJoined && bothReady && (
               <div className="mt-6">
-                <button onClick={handleStartGame} className="nes-btn is-primary w-full">
-                  Start Game!
+                <button
+                  onClick={handleStartGame}
+                  className="nes-btn is-success"
+                  style={{
+                    width: '100%',
+                    fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
+                    padding: '1rem 2rem',
+                    minHeight: '44px',
+                  }}
+                >
+                  🎮 Start Game!
                 </button>
               </div>
             )}

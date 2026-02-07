@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
+import { Leaderboard } from '../components/Leaderboard';
 import { config } from '../config';
 
 interface RoomInfo {
@@ -29,6 +30,14 @@ export function LobbyPage() {
   const [joinCode, setJoinCode] = useState('');
   const [selectedChallenge, setSelectedChallenge] = useState<1 | 2>(1);
 
+  // Filter and pagination state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'waiting' | 'playing'>('all');
+  const [challengeFilter, setChallengeFilter] = useState<'all' | 1 | 2>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const roomsPerPage = 6;
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
   const fetchRooms = useCallback(async () => {
     if (!token) return;
 
@@ -55,6 +64,36 @@ export function LobbyPage() {
     const interval = setInterval(fetchRooms, 10000);
     return () => clearInterval(interval);
   }, [fetchRooms]);
+
+  // Filter rooms based on search, status, and challenge
+  const filteredRooms = rooms.filter((room) => {
+    // Search filter
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch =
+      searchQuery === '' ||
+      room.code.toLowerCase().includes(searchLower) ||
+      room.hostUsername.toLowerCase().includes(searchLower) ||
+      room.player1Username?.toLowerCase().includes(searchLower) ||
+      room.player2Username?.toLowerCase().includes(searchLower);
+
+    // Status filter
+    const matchesStatus = statusFilter === 'all' || room.status === statusFilter;
+
+    // Challenge filter
+    const matchesChallenge = challengeFilter === 'all' || room.challenge === challengeFilter;
+
+    return matchesSearch && matchesStatus && matchesChallenge;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredRooms.length / roomsPerPage);
+  const startIndex = (currentPage - 1) * roomsPerPage;
+  const paginatedRooms = filteredRooms.slice(startIndex, startIndex + roomsPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, challengeFilter]);
 
   const handleCreateRoom = async () => {
     setError('');
@@ -135,6 +174,12 @@ export function LobbyPage() {
             Join by Code
           </button>
           <button
+            onClick={() => setShowLeaderboard(true)}
+            className="nes-btn is-warning"
+          >
+            Leaderboard
+          </button>
+          <button
             onClick={fetchRooms}
             className="nes-btn"
             disabled={isLoadingRooms}
@@ -157,6 +202,85 @@ export function LobbyPage() {
         <div className="nes-container is-dark with-title animate-fade-in animate-delay-3">
           <p className="title">Available Rooms</p>
 
+          {/* Filters */}
+          <div className="mb-4 space-y-3">
+            {/* Search Bar */}
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                type="text"
+                className="nes-input is-dark"
+                placeholder="Search by code or player..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ fontSize: '0.65rem', flex: '1', minWidth: '180px', maxWidth: '300px' }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="nes-btn is-error"
+                  style={{ fontSize: '0.55rem', padding: '0.4rem 0.6rem' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="flex gap-2 flex-wrap items-center">
+              <span style={{ fontSize: '0.55rem', color: '#888', marginRight: '0.5rem' }}>Status:</span>
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`nes-btn ${statusFilter === 'all' ? 'is-primary' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStatusFilter('waiting')}
+                className={`nes-btn ${statusFilter === 'waiting' ? 'is-success' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                Waiting
+              </button>
+              <button
+                onClick={() => setStatusFilter('playing')}
+                className={`nes-btn ${statusFilter === 'playing' ? 'is-warning' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                Live
+              </button>
+
+              <span style={{ fontSize: '0.55rem', color: '#888', marginLeft: '1rem', marginRight: '0.5rem' }}>Challenge:</span>
+              <button
+                onClick={() => setChallengeFilter('all')}
+                className={`nes-btn ${challengeFilter === 'all' ? 'is-primary' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setChallengeFilter(1)}
+                className={`nes-btn ${challengeFilter === 1 ? 'is-success' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                C1
+              </button>
+              <button
+                onClick={() => setChallengeFilter(2)}
+                className={`nes-btn ${challengeFilter === 2 ? 'is-warning' : ''}`}
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem' }}
+              >
+                C2
+              </button>
+            </div>
+
+            {/* Results Count */}
+            <p style={{ fontSize: '0.5rem', color: '#666' }}>
+              Showing {paginatedRooms.length} of {filteredRooms.length} rooms
+              {filteredRooms.length !== rooms.length && ` (${rooms.length} total)`}
+            </p>
+          </div>
+
           {isLoadingRooms ? (
             <div className="loading-container py-12">
               <i className="nes-icon trophy is-large trophy-bounce"></i>
@@ -168,9 +292,15 @@ export function LobbyPage() {
               <p className="text-gray-400 mt-4 mb-2">No rooms available</p>
               <p className="text-xs text-gray-500">Create a room to start a duel!</p>
             </div>
+          ) : filteredRooms.length === 0 ? (
+            <div className="text-center py-8">
+              <i className="nes-icon is-medium star opacity-30"></i>
+              <p className="text-gray-400 mt-4 mb-2" style={{ fontSize: '0.7rem' }}>No matching rooms</p>
+              <p style={{ fontSize: '0.55rem', color: '#666' }}>Try adjusting your filters</p>
+            </div>
           ) : (
             <div className="card-grid">
-              {rooms.map((room, index) => (
+              {paginatedRooms.map((room, index) => (
                 <div
                   key={room.id}
                   className={`room-card ${room.status === 'playing' ? 'is-playing' : ''} animate-fade-in`}
@@ -238,12 +368,90 @@ export function LobbyPage() {
               ))}
             </div>
           )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-6 flex-wrap">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="nes-btn"
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+              >
+                First
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="nes-btn is-primary"
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem', opacity: currentPage === 1 ? 0.5 : 1 }}
+              >
+                Prev
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((page) => {
+                    // Show first, last, current, and adjacent pages
+                    return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                  })
+                  .map((page, idx, arr) => (
+                    <React.Fragment key={page}>
+                      {idx > 0 && arr[idx - 1] !== page - 1 && (
+                        <span style={{ fontSize: '0.5rem', color: '#666' }}>...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(page)}
+                        className={`nes-btn ${currentPage === page ? 'is-success' : ''}`}
+                        style={{ fontSize: '0.5rem', padding: '0.3rem 0.6rem', minWidth: '32px' }}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="nes-btn is-primary"
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="nes-btn"
+                style={{ fontSize: '0.5rem', padding: '0.3rem 0.5rem', opacity: currentPage === totalPages ? 0.5 : 1 }}
+              >
+                Last
+              </button>
+            </div>
+          )}
         </div>
       </main>
 
       {/* Create Room Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 z-50">
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 9999,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCreateModal(false);
+          }}
+        >
           <div className="nes-container is-dark with-title max-w-md w-full animate-fade-in glow-primary">
             <p className="title">Create Room</p>
 
@@ -326,7 +534,24 @@ export function LobbyPage() {
 
       {/* Join Room Modal */}
       {showJoinModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 z-50">
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 9999,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowJoinModal(false);
+          }}
+        >
           <div className="nes-container is-dark with-title max-w-md w-full animate-fade-in glow-secondary">
             <p className="title">Join Room</p>
 
@@ -363,6 +588,43 @@ export function LobbyPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leaderboard Modal */}
+      {showLeaderboard && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 9999,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowLeaderboard(false);
+          }}
+        >
+          <div
+            className="animate-fade-in"
+            style={{
+              width: '100%',
+              maxWidth: '900px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              backgroundColor: '#1a1a2e',
+              borderRadius: '8px',
+              padding: '1rem',
+            }}
+          >
+            <Leaderboard onClose={() => setShowLeaderboard(false)} />
           </div>
         </div>
       )}

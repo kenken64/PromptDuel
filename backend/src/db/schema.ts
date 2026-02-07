@@ -95,6 +95,18 @@ export const duels = sqliteTable('duels', {
     .default(sql`(unixepoch())`),
 });
 
+// Challenge prompts - pre-defined sample prompts for each challenge
+export const challengePrompts = sqliteTable('challenge_prompts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  challenge: integer('challenge').notNull(), // 1 = Basic Validator, 2 = Advanced
+  promptNumber: integer('prompt_number').notNull(), // 1-7
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // Leaderboard table to track player scores across challenges
 export const leaderboard = sqliteTable('leaderboard', {
   id: integer('id').primaryKey({ autoIncrement: true }),

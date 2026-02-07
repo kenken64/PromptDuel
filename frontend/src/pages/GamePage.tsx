@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
@@ -53,6 +53,7 @@ export function GamePage() {
     currentTurn,
     timeLeft,
     isActive,
+    winner,
     gameMessages,
     player1Console,
     player2Console,
@@ -61,6 +62,7 @@ export function GamePage() {
     player1Processing,
     player2Processing,
     isEvaluating,
+    shouldNavigateToResults,
     selectedChallenge,
     gameTimeoutMinutes,
     setPlayer1,
@@ -80,6 +82,19 @@ export function GamePage() {
 
   // Initialize game from room data
   useEffect(() => {
+    console.log('[GamePage Effect] Running with:', {
+      hasRoom: !!room,
+      roomCode: room?.code,
+      roomPlayer1: room?.player1,
+      roomPlayer2: room?.player2,
+      currentUserPlayer,
+      userId: user?.id,
+      player1Id: room?.player1?.id,
+      player2Id: room?.player2?.id,
+      player1Connected,
+      player2Connected,
+    });
+
     if (room) {
       console.log('GamePage: Room data available', {
         code: room.code,
@@ -101,14 +116,28 @@ export function GamePage() {
 
       // Connect only the current player to Claude Code Server
       // Each player's browser only connects their own WebSocket
+      console.log('[GamePage] Checking WebSocket connection conditions:', {
+        hasPlayer1: !!room.player1,
+        hasPlayer2: !!room.player2,
+        currentUserPlayer,
+        player1Connected,
+        player2Connected,
+      });
+
       if (room.player1 && room.player2) {
-        if (currentUserPlayer === 'player1' && !player1Connected) {
-          console.log('GamePage: Connecting player 1 to Claude Code Server');
+        // Always attempt to connect - the connectPlayer function will handle
+        // checking if already connected and room changes
+        if (currentUserPlayer === 'player1') {
+          console.log('GamePage: Requesting player 1 connection to Claude Code Server');
           connectPlayer(1, room.player1.username, room.challenge, room.code);
-        } else if (currentUserPlayer === 'player2' && !player2Connected) {
-          console.log('GamePage: Connecting player 2 to Claude Code Server');
+        } else if (currentUserPlayer === 'player2') {
+          console.log('GamePage: Requesting player 2 connection to Claude Code Server');
           connectPlayer(2, room.player2.username, room.challenge, room.code);
+        } else {
+          console.log('[GamePage] Not connecting: currentUserPlayer is null');
         }
+      } else {
+        console.log('[GamePage] Not connecting: missing player1 or player2 in room data');
       }
     } else {
       console.log('GamePage: Room data not available yet');
@@ -124,13 +153,24 @@ export function GamePage() {
     currentUserPlayer,
   ]);
 
-  // Auto-start duel when the current player is connected
+  // Track if duel has been started to prevent re-triggering (use ref for synchronous updates)
+  const duelStartedRef = useRef(false);
+
+  // Auto-start duel when the current player is connected (only once)
   // Player 1 (host) sends the judge message, Player 2 just activates
   useEffect(() => {
     const isConnected = currentUserPlayer === 'player1' ? player1Connected : player2Connected;
 
-    if (isConnected && !isActive && !isSpectator && currentUserPlayer) {
+    // Only auto-start if:
+    // - Connected
+    // - Game not active
+    // - Not a spectator
+    // - Duel hasn't been started yet (prevents re-triggering after End Duel)
+    // - Not currently evaluating
+    // - No winner yet
+    if (isConnected && !isActive && !isSpectator && currentUserPlayer && !duelStartedRef.current && !isEvaluating && !winner) {
       console.log(`${currentUserPlayer} connected, starting duel...`);
+      duelStartedRef.current = true; // Set immediately (synchronous)
       if (currentUserPlayer === 'player1') {
         // Host sends the start message
         startDuel();
@@ -139,7 +179,7 @@ export function GamePage() {
         setIsActive(true);
       }
     }
-  }, [player1Connected, player2Connected, isActive, isSpectator, startDuel, currentUserPlayer, setIsActive]);
+  }, [player1Connected, player2Connected, isActive, isSpectator, startDuel, currentUserPlayer, setIsActive, isEvaluating, winner]);
 
   const handlePromptChange = (player: 'player1' | 'player2', prompt: string) => {
     if (player === 'player1') {
@@ -155,12 +195,16 @@ export function GamePage() {
     navigate('/lobby');
   };
 
-  // Redirect to results when game ends
+  // Redirect to results when game ends (room status changes, winner determined, or GAME_END received)
   useEffect(() => {
-    if (room?.status === 'finished') {
-      navigate(`/results/${code}`);
+    if (room?.status === 'finished' || (winner && !isActive && !isEvaluating) || shouldNavigateToResults) {
+      console.log('Navigating to results - room finished, winner determined, or GAME_END received');
+      // Small delay to ensure state is saved
+      setTimeout(() => {
+        navigate(`/results/${code}`);
+      }, 1000);
     }
-  }, [room?.status, code, navigate]);
+  }, [room?.status, code, navigate, winner, isActive, isEvaluating, shouldNavigateToResults]);
 
   return (
     <div className="page-container font-['Press_Start_2P']">
@@ -198,13 +242,38 @@ export function GamePage() {
               <span style={{ fontSize: '0.7rem', color: '#888' }}>
                 Playing as <span style={{ color: '#92cc41' }}>{user?.username}</span>
               </span>
+              {/* End Duel button - only for host (player1) when it's their turn, game is active and not processing */}
+              {currentUserPlayer === 'player1' && isActive && !isEvaluating && (
+                <button
+                  onClick={handleEndDuel}
+                  disabled={player1Processing || player2Processing || currentTurn === 'player2'}
+                  className="nes-btn is-warning"
+                  type="button"
+                  style={{
+                    fontSize: 'clamp(0.5rem, 2vw, 0.8rem)',
+                    padding: '0.5rem 1rem',
+                    opacity: (player1Processing || player2Processing || currentTurn === 'player2') ? 0.5 : 1,
+                  }}
+                >
+                  {(player1Processing || player2Processing) ? 'Wait...' : currentTurn === 'player2' ? "P2's Turn" : 'End Duel'}
+                </button>
+              )}
               <button
                 onClick={handleReset}
+                disabled={player1Processing || player2Processing || (currentUserPlayer !== currentTurn && isActive)}
                 className="nes-btn is-error"
                 type="button"
-                style={{ fontSize: 'clamp(0.5rem, 2vw, 0.8rem)', padding: '0.5rem 1rem' }}
+                style={{
+                  fontSize: 'clamp(0.5rem, 2vw, 0.8rem)',
+                  padding: '0.5rem 1rem',
+                  opacity: (player1Processing || player2Processing || (currentUserPlayer !== currentTurn && isActive)) ? 0.5 : 1,
+                }}
               >
-                Leave
+                {(player1Processing || player2Processing)
+                  ? 'Wait...'
+                  : (currentUserPlayer !== currentTurn && isActive)
+                    ? (currentTurn === 'player1' ? "P1's Turn" : "P2's Turn")
+                    : 'Leave'}
               </button>
             </div>
           </div>

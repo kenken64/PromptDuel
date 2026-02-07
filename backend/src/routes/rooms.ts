@@ -527,6 +527,41 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
 
     return { success: true };
   })
+  // Finish room (mark as finished after game ends)
+  .post('/:code/finish', async ({ params, bearer, set }) => {
+    const user = await getUserFromToken(bearer);
+    if (!user) {
+      set.status = 401;
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    const [room] = await db
+      .select()
+      .from(rooms)
+      .where(eq(rooms.code, params.code))
+      .limit(1);
+
+    if (!room) {
+      set.status = 404;
+      return { success: false, error: 'Room not found' };
+    }
+
+    // Only players in the room can finish it
+    if (room.player1Id !== user.id && room.player2Id !== user.id) {
+      set.status = 403;
+      return { success: false, error: 'Only players in the room can finish the game' };
+    }
+
+    // Update room status to finished
+    await db
+      .update(rooms)
+      .set({ status: 'finished' })
+      .where(eq(rooms.id, room.id));
+
+    console.log(`Room ${room.code} marked as finished by user ${user.id}`);
+
+    return { success: true };
+  })
   // Delete room (host only)
   .delete('/:code', async ({ params, bearer, set }) => {
     const user = await getUserFromToken(bearer);

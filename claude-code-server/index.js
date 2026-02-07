@@ -1,9 +1,8 @@
 import { WebSocketServer } from 'ws';
-import * as pty from 'node-pty';
+import Anthropic from '@anthropic-ai/sdk';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import os from 'os';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,9 +16,14 @@ const PORT = 3001;
 const sessions = new Map();
 const spectatorConnections = new Map(); // roomCode -> Set of WebSocket connections
 
-// Base directory for player workspaces (override with WORKSPACES_DIR env var)
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Base directory for player workspaces
 const WORKSPACES_DIR = process.env.WORKSPACES_DIR
-  ? resolve(process.env.WORKSPACES_DIR)
+  ? resolve(__dirname, process.env.WORKSPACES_DIR)
   : resolve(__dirname, '../workspaces');
 
 // Ensure workspaces directory exists
@@ -28,156 +32,112 @@ if (!existsSync(WORKSPACES_DIR)) {
   console.log(`Created workspaces directory: ${WORKSPACES_DIR}`);
 }
 
-// Determine shell based on platform
-const isWindows = os.platform() === 'win32';
-
-// On Windows, Claude Code requires git-bash
-const getWindowsShell = () => {
-  // Check common git-bash locations
-  const possiblePaths = [
-    process.env.CLAUDE_CODE_GIT_BASH_PATH,
-    'C:\\Program Files\\Git\\bin\\bash.exe',
-    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-    'D:\\Program Files\\Git\\bin\\bash.exe',
-    'D:\\Program Files\\Git\\usr\\bin\\bash.exe',
-    'C:\\Git\\bin\\bash.exe',
-  ].filter(Boolean);
-
-  for (const p of possiblePaths) {
-    if (existsSync(p)) {
-      console.log(`Found git-bash at: ${p}`);
-      return p;
-    }
-  }
-
-  // Fallback to just 'bash' hoping it's in PATH
-  console.log('Git-bash not found in common locations, trying PATH...');
-  return 'bash';
-};
-
-// Get Unix shell - prefer user's shell, fallback to bash
-const getUnixShell = () => {
-  // Try user's default shell first
-  const userShell = process.env.SHELL;
-  if (userShell && existsSync(userShell)) {
-    console.log(`Using user's shell: ${userShell}`);
-    return userShell;
-  }
-  // Fallback options
-  const fallbacks = ['/bin/bash', '/bin/zsh', '/bin/sh'];
-  for (const sh of fallbacks) {
-    if (existsSync(sh)) {
-      console.log(`Using fallback shell: ${sh}`);
-      return sh;
-    }
-  }
-  return '/bin/sh';
-};
-
-const shell = isWindows ? getWindowsShell() : getUnixShell();
-// Spawn interactive shell first, then send claude command after
-const shellArgs = isWindows
-  ? ['--login', '-i']
-  : ['-l'];
-
 const wss = new WebSocketServer({ port: PORT });
 
-console.log(`Claude Code Terminal Server listening on ws://localhost:${PORT}`);
+// Add process-level error handlers to catch unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[PROCESS] Unhandled Rejection at:', promise);
+  console.error('[PROCESS] Reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[PROCESS] Uncaught Exception:', error);
+});
+
+console.log(`Claude Code API Server listening on ws://localhost:${PORT}`);
 console.log(`Workspaces directory: ${WORKSPACES_DIR}`);
-console.log(`Platform: ${os.platform()}, Shell: ${shell}`);
 
 if (process.env.ANTHROPIC_API_KEY) {
-  console.log(`Auth: ANTHROPIC_API_KEY is set (${process.env.ANTHROPIC_API_KEY.substring(0, 10)}...)`);
+  console.log(`Auth: ANTHROPIC_API_KEY is set (${process.env.ANTHROPIC_API_KEY.substring(0, 15)}...)`);
 } else {
-  console.warn('Warning: ANTHROPIC_API_KEY is not set. Claude Code will require interactive login.');
+  console.error('ERROR: ANTHROPIC_API_KEY is not set!');
 }
+
+console.log('\nActive sessions can be monitored via console logs.\n');
+
+// Test Anthropic API connection at startup using fetch directly
+async function testAnthropicConnection() {
+  console.log('[TEST] Testing Anthropic API connection with fetch...');
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 50,
+        messages: [{ role: 'user', content: 'Say "API working" in exactly 2 words.' }],
+      }),
+    });
+
+    console.log('[TEST] Fetch response status:', response.status);
+    const data = await response.json();
+    console.log('[TEST] API Response:', JSON.stringify(data, null, 2));
+
+    if (data.content && data.content[0]) {
+      console.log('[TEST] Anthropic API connection successful!');
+    } else if (data.error) {
+      console.error('[TEST] API Error:', data.error.message);
+    }
+  } catch (error) {
+    console.error('[TEST] Anthropic API connection FAILED:');
+    console.error('[TEST] Error:', error.message);
+  }
+}
+
+// Run test
+testAnthropicConnection();
 
 // Helper to sanitize player name for directory
 function sanitizeName(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50);
 }
 
-// Challenge descriptions
+// Challenge descriptions for system prompts
 const CHALLENGE_CONFIG = {
   1: {
     name: 'BracketValidator - Stack-Based CLI Tool',
-    description: `Build the BracketValidator CLI tool using a stack-based algorithm.
+    systemPrompt: `You are a coding assistant helping build a bracket validation CLI tool in Node.js.
 
-## Reference
-- Repo: https://github.com/kenken64/BracketValidator
-- Solution: https://github.com/kenken64/BracketValidator/blob/main/SOLUTION.md
+## Task
+Build a CLI tool that validates whether brackets in a string are properly matched.
 
 ## Requirements
-- Must be written in Node.js
-- CLI application with interactive and argument modes
+- Node.js ES module (use import/export)
+- CLI with interactive mode (readline) or argument mode
 - Stack-based bracket validation algorithm
+- Support three bracket types: (), [], {}
+- Ignore non-bracket characters
+- Return validation result with error position if invalid
 
-## Core Rules
-1. Every opening bracket must have matching closing bracket
-2. Brackets close in correct order (innermost first - LIFO)
-3. Support three bracket types: (), [], {}
-4. Ignore all non-bracket characters
-5. Return { valid: true } for valid input
-6. Return { valid: false, error, position } for invalid input
-
-## Algorithm Requirements
-- Use stack (array) to track opening brackets with positions
-- O(1) bracket pair lookup using object mapping
-- Single pass through input - O(n) time complexity
-- Position tracking for error reporting
-
-## Error Detection
-- Unexpected closing bracket (no match available)
-- Mismatched bracket types
-- Unclosed opening brackets remaining in stack
-
-## Scoring Criteria (Weighted)
-- Functionality/Test Cases: 40%
-- Algorithm Efficiency: 20%
-- Error Handling: 15%
-- Code Quality: 15%
-- CLI Implementation: 10%`,
+## Output Format
+Return ONLY the complete code for index.js. No explanations, no markdown code blocks, just the raw JavaScript code.
+The code must be complete and runnable with "node index.js".`,
   },
   2: {
     name: 'QuantumHeist - Terminal Pathfinding Game',
-    description: `Build the QuantumHeist terminal-based pathfinding puzzle game.
+    systemPrompt: `You are a coding assistant helping build a terminal-based pathfinding puzzle game in Node.js.
 
-## Reference
-- Repo: https://github.com/kenken64/QuantumHeist
-- Solution Guide: https://github.com/kenken64/QuantumHeist/blob/main/SOLUTION_GUIDE.md
+## Task
+Build a grid-based puzzle game with pathfinding using Dijkstra's algorithm.
 
 ## Requirements
-- Must be written in Node.js
+- Node.js ES module (use import/export)
+- Grid navigation with obstacles
 - Implement Dijkstra's algorithm for pathfinding
-- Grid-based puzzle with state compression
+- Console-based display
+- Collectibles and obstacles
 
-## Game Elements
-- Grid navigation (4 directions)
-- Collectibles: Gems (G), Keys (K)
-- Obstacles: Walls (#), Doors (D), Lasers (L)
-- Special: Portals (P), Time Rifts (T)
-- Start (S) and Exit (E) points
-
-## Algorithm Requirements
-- Use min-heap priority queue
-- State = (position, time, collected items via bitmasks)
-- Portal: 0 time cost, single use
-- Time rift: -2 time, requires time >= 2
-- Laser: blocks if time % 3 == 0
-
-## Scoring Criteria (100 points)
-- Algorithm Design & Implementation: 25 pts
-- Data Structures (heap, bitmask, hashmap): 20 pts
-- Game Mechanics Implementation: 20 pts
-- Code Quality: 15 pts
-- Complexity Analysis: 10 pts
-- Testing & Correctness: 5 pts
-- Performance: 3 pts
-- Documentation: 2 pts`,
+## Output Format
+Return ONLY the complete code for index.js. No explanations, no markdown code blocks, just the raw JavaScript code.
+The code must be complete and runnable with "node index.js".`,
   },
 };
 
-// Initialize Node.js project in workspace
+// Initialize workspace with starter files
 function initializeWorkspace(playerDir, playerName, challenge) {
   const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
 
@@ -190,11 +150,9 @@ function initializeWorkspace(playerDir, playerName, challenge) {
     type: 'module',
     scripts: {
       start: 'node index.js',
-      dev: 'node --watch index.js'
     },
-    keywords: ['prompt-duel', `challenge${challenge}`],
     author: playerName,
-    license: 'MIT'
+    license: 'MIT',
   };
 
   const packageJsonPath = resolve(playerDir, 'package.json');
@@ -203,61 +161,34 @@ function initializeWorkspace(playerDir, playerName, challenge) {
     console.log(`Created package.json for ${playerName}`);
   }
 
-  // Create CLAUDE.md with basic project details (no challenge requirements revealed)
-  const challengeHint = challenge === 1
-    ? 'CLI Tool - Build a command-line application based on the player\'s prompt.'
-    : 'Terminal Game - Build a terminal-based game application based on the player\'s prompt.';
-
+  // Create CLAUDE.md
   const claudeMd = `# Prompt Duel - Challenge ${challenge}
 
 Player: ${playerName}
-Type: ${challengeHint}
+Challenge: ${config.name}
 
 ## Instructions
-This is a Node.js coding challenge. You must implement what the player asks for.
-
-**IMPORTANT:** Only implement what the player specifically requests in their prompt.
-Do NOT assume or add features that weren't explicitly requested.
-If the prompt is vague or unclear, create a minimal implementation that matches only what was asked.
-
-## Project Setup
-- Main entry point: \`index.js\`
-- Run with: \`node index.js\` or \`npm start\`
-- This is an ES module project (use import/export)
-- You can use readline for CLI input
-- You can install npm packages if needed
-
-## Rules
-- Follow the player's prompt exactly
-- Don't add extra features unless asked
-- Keep it simple if the prompt is simple
-- For CLI apps: handle command line arguments or interactive input
-- For terminal games: use console output for display
+This workspace is for your coding challenge.
+Your code will be written to index.js based on your prompts.
 `;
 
   const claudeMdPath = resolve(playerDir, 'CLAUDE.md');
   if (!existsSync(claudeMdPath)) {
     writeFileSync(claudeMdPath, claudeMd);
-    console.log(`Created CLAUDE.md for ${playerName}`);
   }
 
-  // Create starter index.js (minimal, no challenge hints)
-  const indexJs = `// Prompt Duel - Challenge ${challenge}
-// Player: ${playerName}
-//
-// Implement what the player requests in their prompt.
-
-// Your code goes here...
-`;
-
+  // Create starter index.js if not exists
   const indexJsPath = resolve(playerDir, 'index.js');
   if (!existsSync(indexJsPath)) {
-    writeFileSync(indexJsPath, indexJs);
-    console.log(`Created index.js for ${playerName}`);
+    writeFileSync(indexJsPath, `// Prompt Duel - Challenge ${challenge}
+// Player: ${playerName}
+//
+// Your code will appear here after submitting prompts.
+`);
   }
 }
 
-// Broadcast terminal output to spectators of a room
+// Broadcast to spectators
 function broadcastToSpectators(roomCode, playerName, data) {
   const spectators = spectatorConnections.get(roomCode);
   if (!spectators || spectators.size === 0) return;
@@ -269,287 +200,216 @@ function broadcastToSpectators(roomCode, playerName, data) {
   });
 
   spectators.forEach((spectatorWs) => {
-    if (spectatorWs.readyState === 1) { // WebSocket.OPEN
+    if (spectatorWs.readyState === 1) {
       spectatorWs.send(message);
     }
   });
 }
 
+// Generate code using Anthropic API
+async function generateCode(session, prompt, ws) {
+  const { playerName, challenge, playerDir, roomCode } = session;
+  const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
+
+  console.log(`[generateCode] Starting for ${playerName}`);
+  console.log(`[generateCode] Prompt: "${prompt.substring(0, 100)}..."`);
+  console.log(`[generateCode] Challenge: ${challenge}, PlayerDir: ${playerDir}`);
+
+  // Send processing started
+  console.log(`[generateCode] Sending processing-started...`);
+  ws.send(JSON.stringify({ type: 'processing-started' }));
+  console.log(`[generateCode] processing-started sent`);
+
+  // Send output to show we're working
+  const startMsg = `\n[Claude API] Processing prompt for ${playerName}...\n`;
+  ws.send(JSON.stringify({ type: 'output', data: startMsg }));
+  broadcastToSpectators(roomCode, playerName, startMsg);
+
+  try {
+    // Read current index.js content for context
+    const indexJsPath = resolve(playerDir, 'index.js');
+    let currentCode = '';
+    if (existsSync(indexJsPath)) {
+      currentCode = readFileSync(indexJsPath, 'utf-8');
+    }
+
+    // Build the message with context
+    const userMessage = currentCode && !currentCode.includes('Your code will appear here')
+      ? `Current code in index.js:\n\`\`\`javascript\n${currentCode}\n\`\`\`\n\nUser request: ${prompt}\n\nUpdate the code based on the request. Return the COMPLETE updated code.`
+      : `User request: ${prompt}\n\nGenerate complete code for index.js.`;
+
+    // Call Anthropic API
+    console.log(`[generateCode] Calling Anthropic API...`);
+    console.log(`[generateCode] Model: claude-sonnet-4-20250514`);
+    console.log(`[generateCode] User message length: ${userMessage.length}`);
+    console.log(`[generateCode] System prompt length: ${config.systemPrompt.length}`);
+
+    console.log(`[generateCode] About to call anthropic.messages.create...`);
+
+    // Use explicit Promise handling to debug
+    const apiPromise = anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 8192,
+      system: config.systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    console.log(`[generateCode] API promise created, type: ${typeof apiPromise}`);
+    console.log(`[generateCode] Is promise: ${apiPromise instanceof Promise}`);
+    console.log(`[generateCode] Awaiting API promise...`);
+
+    let response;
+    try {
+      response = await apiPromise;
+      console.log(`[generateCode] API call returned successfully`);
+    } catch (apiError) {
+      console.error(`[generateCode] API CALL FAILED:`);
+      console.error(`[generateCode] Error type: ${apiError.constructor.name}`);
+      console.error(`[generateCode] Error message: ${apiError.message}`);
+      console.error(`[generateCode] Full error:`, apiError);
+      throw apiError;
+    }
+
+    console.log(`[generateCode] API Response received!`);
+    console.log(`[generateCode] Response ID: ${response.id}`);
+    console.log(`[generateCode] Model: ${response.model}`);
+    console.log(`[generateCode] Stop reason: ${response.stop_reason}`);
+    console.log(`[generateCode] Usage: input=${response.usage?.input_tokens}, output=${response.usage?.output_tokens}`);
+    console.log(`[generateCode] Content blocks: ${response.content?.length}`);
+
+    // Extract the code from response
+    let generatedCode = response.content[0].text;
+    console.log(`[generateCode] Generated code length: ${generatedCode.length}`);
+
+    // Clean up the response - remove markdown code blocks if present
+    generatedCode = generatedCode
+      .replace(/^```(?:javascript|js)?\n?/gm, '')
+      .replace(/\n?```$/gm, '')
+      .trim();
+
+    // Write the code to index.js
+    writeFileSync(indexJsPath, generatedCode);
+    console.log(`[${playerName}] Code written to ${indexJsPath}`);
+
+    // Send output showing success
+    const successMsg = `\n[Claude API] Code generated successfully!\n[Claude API] Written to: ${indexJsPath}\n[Claude API] Lines: ${generatedCode.split('\n').length}\n`;
+    ws.send(JSON.stringify({ type: 'output', data: successMsg }));
+    broadcastToSpectators(roomCode, playerName, successMsg);
+
+    // Show a preview of the code
+    const preview = generatedCode.substring(0, 500) + (generatedCode.length > 500 ? '\n...(truncated)' : '');
+    const previewMsg = `\n--- Code Preview ---\n${preview}\n--- End Preview ---\n`;
+    ws.send(JSON.stringify({ type: 'output', data: previewMsg }));
+    broadcastToSpectators(roomCode, playerName, previewMsg);
+
+    // Send processing complete
+    ws.send(JSON.stringify({
+      type: 'processing-complete',
+      playerName,
+      challenge,
+    }));
+
+    console.log(`[${playerName}] Processing complete`);
+
+  } catch (error) {
+    console.error(`[generateCode] ERROR for ${playerName}:`);
+    console.error(`[generateCode] Error name: ${error.name}`);
+    console.error(`[generateCode] Error message: ${error.message}`);
+    console.error(`[generateCode] Error stack:`, error.stack);
+    if (error.status) console.error(`[generateCode] HTTP Status: ${error.status}`);
+    if (error.error) console.error(`[generateCode] API Error details:`, JSON.stringify(error.error));
+
+    const errorMsg = `\n[Claude API] Error: ${error.message}\n`;
+    ws.send(JSON.stringify({ type: 'output', data: errorMsg }));
+    broadcastToSpectators(roomCode, playerName, errorMsg);
+
+    // Still send processing complete so the game can continue
+    ws.send(JSON.stringify({
+      type: 'processing-complete',
+      playerName,
+      challenge,
+    }));
+  }
+}
+
+// WebSocket connection handler
 wss.on('connection', (ws) => {
   console.log('WebSocket client connected');
   let sessionId = null;
   let spectatingRoom = null;
 
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     try {
       const msg = JSON.parse(message.toString());
+      console.log(`[WS] Received message type: ${msg.type}, sessionId: ${sessionId}`);
 
       if (msg.type === 'start-session') {
-        const { cols = 80, rows = 24, playerName, challenge, roomCode } = msg;
+        const { playerName, challenge, roomCode } = msg;
 
-        let cwd = WORKSPACES_DIR;
+        // Create player workspace
+        const sanitizedName = sanitizeName(playerName);
+        const namespace = `${sanitizedName}_challenge${challenge}`;
+        const playerDir = resolve(WORKSPACES_DIR, namespace);
 
-        // Create player-specific namespace directory
-        if (playerName && challenge) {
-          const sanitizedName = sanitizeName(playerName);
-          const namespace = `${sanitizedName}_challenge${challenge}`;
-          const playerDir = resolve(WORKSPACES_DIR, namespace);
-
-          // Create directory if it doesn't exist
-          const isNewWorkspace = !existsSync(playerDir);
-          if (isNewWorkspace) {
-            mkdirSync(playerDir, { recursive: true });
-            console.log(`Created player workspace: ${playerDir}`);
-          }
-
-          // Initialize Node.js project
-          initializeWorkspace(playerDir, playerName, challenge);
-
-          cwd = playerDir;
+        if (!existsSync(playerDir)) {
+          mkdirSync(playerDir, { recursive: true });
+          console.log(`Created player workspace: ${playerDir}`);
         }
 
-        console.log(`Starting PTY session for ${playerName || 'unknown'} in: ${cwd}`);
+        // Initialize workspace files
+        initializeWorkspace(playerDir, playerName, challenge);
 
-        // Spawn shell with PTY
-        // Pass through all env vars to ensure Claude Code auth works
-        // Use WinPTY on Windows (useConpty: false) to avoid AttachConsole errors
-        const ptyProcess = pty.spawn(shell, shellArgs, {
-          name: 'xterm-256color',
-          cols,
-          rows,
-          cwd,
-          useConpty: !isWindows, // Disable ConPTY on Windows, use WinPTY instead
-          env: {
-            ...process.env,
-            PLAYER_NAME: playerName || 'Player',
-            CHALLENGE: challenge ? challenge.toString() : '1',
-            // Ensure HOME is set for Claude Code to find auth credentials
-            HOME: process.env.HOME || process.env.USERPROFILE,
-            // Set git-bash path for Claude Code on Windows
-            CLAUDE_CODE_GIT_BASH_PATH: isWindows ? shell : undefined,
-            // Keep normal terminal mode for Claude's interactive UI
-          },
+        // Create session
+        sessionId = `${sanitizedName}_${Date.now()}`;
+        sessions.set(sessionId, {
+          ws,
+          playerName,
+          challenge,
+          playerDir,
+          roomCode,
         });
 
-        sessionId = `${sanitizeName(playerName || 'player')}_${Date.now()}`;
-        sessions.set(sessionId, { ptyProcess, ws, playerName, challenge, roomCode });
+        console.log(`Session ${sessionId} created for ${playerName}`);
 
-        console.log(`PTY session ${sessionId} created with PID: ${ptyProcess.pid}`);
-
-        // Send welcome message
-        const welcome = '\r\n\x1b[32m=== Claude Code Terminal ===\x1b[0m\r\n' +
-                       `\x1b[36mPlayer:\x1b[0m ${playerName || 'Unknown'}\r\n` +
-                       `\x1b[36mChallenge:\x1b[0m ${challenge || 'N/A'}\r\n` +
-                       `\x1b[36mDirectory:\x1b[0m ${cwd}\r\n` +
-                       '\x1b[33mAuto-launching Claude Code...\x1b[0m\r\n\r\n';
-        ws.send(JSON.stringify({ type: 'output', data: welcome }));
-
-        // Forward PTY output to WebSocket and detect Claude ready/completion
-        ptyProcess.onData((data) => {
-          if (ws.readyState === 1) {
-            const session = sessions.get(sessionId);
-
-            // Debug: log all output
-            const debugData = data.replace(/\r/g, '\\r').replace(/\n/g, '\\n').substring(0, 200);
-            console.log(`[${sessionId}] PTY OUTPUT: "${debugData}"${data.length > 200 ? '...' : ''}`);
-
-            // Detect Claude's ready prompt (❯ or >) to know when we can send input
-            // Claude shows this when it's ready for input or done processing
-            // Look for the specific Claude prompt pattern
-            const hasClaudePrompt = data.includes('❯') || data.includes('> ');
-            const hasTryMessage = data.includes('Try "');
-            const isClaudePrompt = hasClaudePrompt || hasTryMessage;
-
-            console.log(`[${sessionId}] DEBUG: hasClaudePrompt=${hasClaudePrompt}, hasTryMessage=${hasTryMessage}, waitingForClaudeReady=${session?.waitingForClaudeReady}, waitingForCompletion=${session?.waitingForCompletion}, outputSeen=${session?.outputSeen}`);
-
-            if (session && session.waitingForClaudeReady && isClaudePrompt) {
-              console.log(`[${sessionId}] >>> Claude is ready, sending pending prompt...`);
-              session.waitingForClaudeReady = false;
-
-              // Send the pending prompt
-              if (session.pendingPrompt) {
-                setTimeout(() => {
-                  session.ptyProcess.write(session.pendingPrompt + '\r');
-                  console.log(`[${sessionId}] >>> Sent prompt: ${session.pendingPrompt.substring(0, 50)}...`);
-                  session.pendingPrompt = null;
-                  session.waitingForCompletion = true;
-                  session.outputSeen = false;
-                  session.promptSentTime = Date.now();
-
-                  // Notify client that processing started
-                  ws.send(JSON.stringify({ type: 'processing-started' }));
-                }, 1000); // Wait a bit longer for Claude to be fully ready
-              }
-            }
-
-            // Detect completion - Claude shows prompt again after finishing work
-            // Only trigger after we've seen substantial output and some time has passed
-            if (session && session.waitingForCompletion && isClaudePrompt && !session.waitingForClaudeReady) {
-              const timeSincePrompt = Date.now() - (session.promptSentTime || 0);
-              console.log(`[${sessionId}] DEBUG completion check: outputSeen=${session.outputSeen}, timeSincePrompt=${timeSincePrompt}ms`);
-
-              // Only trigger if we've seen output AND at least 5 seconds have passed
-              if (session.outputSeen && timeSincePrompt > 5000) {
-                console.log(`[${sessionId}] >>> Claude finished processing (detected prompt after ${timeSincePrompt}ms)`);
-                session.waitingForCompletion = false;
-                session.outputSeen = false;
-
-                // Send completion notification
-                ws.send(JSON.stringify({
-                  type: 'processing-complete',
-                  playerName: session.playerName,
-                  challenge: session.challenge,
-                }));
-              }
-            }
-
-            // Track that we've seen output (Claude is working)
-            // Don't count the prompt itself as output
-            if (session && session.waitingForCompletion && !isClaudePrompt && data.trim().length > 10) {
-              if (!session.outputSeen) {
-                console.log(`[${sessionId}] >>> First substantial output detected`);
-              }
-              session.outputSeen = true;
-              session.lastOutputTime = Date.now();
-
-              // Clear any existing idle timer
-              if (session.idleTimer) {
-                clearTimeout(session.idleTimer);
-              }
-
-              // Set idle timer - if no output for 10 seconds, consider Claude done
-              session.idleTimer = setTimeout(() => {
-                if (session.waitingForCompletion && session.outputSeen) {
-                  const timeSincePrompt = Date.now() - (session.promptSentTime || 0);
-                  console.log(`[${sessionId}] >>> Claude idle for 10s, considering done (total time: ${timeSincePrompt}ms)`);
-                  session.waitingForCompletion = false;
-                  session.outputSeen = false;
-
-                  // Send completion notification
-                  ws.send(JSON.stringify({
-                    type: 'processing-complete',
-                    playerName: session.playerName,
-                    challenge: session.challenge,
-                  }));
-                }
-              }, 10000);
-            }
-
-            // Check for completion marker in output (fallback)
-            if (session && session.isProcessing && session.completionMarker) {
-              if (data.includes(session.completionMarker)) {
-                console.log(`[${sessionId}] Detected completion marker`);
-                session.isProcessing = false;
-
-                ws.send(JSON.stringify({
-                  type: 'processing-complete',
-                  playerName: session.playerName,
-                  challenge: session.challenge,
-                }));
-
-                const cleanedData = data.replace(session.completionMarker, '').replace(/\n\s*\n/g, '\n');
-                if (cleanedData.trim()) {
-                  ws.send(JSON.stringify({ type: 'output', data: cleanedData }));
-                  if (session.roomCode) {
-                    broadcastToSpectators(session.roomCode, session.playerName, cleanedData);
-                  }
-                }
-                session.completionMarker = null;
-                return;
-              }
-            }
-
-            ws.send(JSON.stringify({ type: 'output', data }));
-
-            // Broadcast terminal output to spectators if in a room
-            if (session && session.roomCode) {
-              broadcastToSpectators(session.roomCode, session.playerName, data);
-            }
-          }
-        });
-
-        // Handle PTY exit
-        ptyProcess.onExit(({ exitCode, signal }) => {
-          console.log(`PTY session ${sessionId} exited with code ${exitCode}, signal ${signal}`);
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'exit', exitCode }));
-          }
-          sessions.delete(sessionId);
-        });
-
+        // Send session started
         ws.send(JSON.stringify({
           type: 'session-started',
           sessionId,
-          workspace: cwd,
+          workspace: playerDir,
           playerName,
-          challenge
+          challenge,
         }));
 
-        // Set up environment for Claude Code (don't auto-launch, wait for user prompts)
-        setTimeout(() => {
-          if (sessions.has(sessionId)) {
-            // Set the git bash path environment variable first
-            const envCmd = isWindows
-              ? `export CLAUDE_CODE_GIT_BASH_PATH="${shell}"\r`
-              : '';
-            if (envCmd) {
-              ptyProcess.write(envCmd);
-            }
-            console.log(`Session ${sessionId} ready for Claude prompts`);
-          }
-        }, 1000);
+        // Send welcome message
+        const welcome = `\n=== Claude Code API Server ===\nPlayer: ${playerName}\nChallenge: ${challenge}\nWorkspace: ${playerDir}\nReady for prompts!\n\n`;
+        ws.send(JSON.stringify({ type: 'output', data: welcome }));
 
       } else if (msg.type === 'input') {
+        console.log(`[WS] Input received, sessionId: ${sessionId}, data length: ${msg.data?.length}`);
+        console.log(`[WS] Available sessions: ${Array.from(sessions.keys()).join(', ')}`);
+
         const session = sessions.get(sessionId);
         if (session) {
           const input = msg.data.trim();
-          console.log(`[${sessionId}] Received input: ${input.substring(0, 100)}...`);
+          console.log(`[${sessionId}] Processing input: "${input.substring(0, 100)}..."`);
 
-          // Mark session as processing
-          session.isProcessing = true;
-
-          // Generate unique completion marker for this request
-          const completionMarker = `___CLAUDE_DONE_${Date.now()}___`;
-          session.completionMarker = completionMarker;
-
-          // Start Claude interactively if not already running, then send prompt
-          if (!session.claudeRunning) {
-            session.claudeRunning = true;
-            session.pendingPrompt = input;
-            session.ptyProcess.write('claude --dangerously-skip-permissions\r');
-            console.log(`[${sessionId}] Starting Claude Code interactively...`);
-
-            // Wait for Claude to initialize (look for the prompt), then send the user's prompt
-            // processing-started will be sent after Claude is ready
-            session.waitingForClaudeReady = true;
-          } else {
-            // Claude already running, just send the prompt
-            session.ptyProcess.write(input + '\r');
-            session.waitingForCompletion = true;
-            session.outputSeen = false;
-            console.log(`[${sessionId}] Sent prompt to Claude: ${input.substring(0, 50)}...`);
-
-            // Notify client that processing started
-            ws.send(JSON.stringify({ type: 'processing-started' }));
-          }
+          // Generate code using Anthropic API
+          console.log(`[${sessionId}] Calling generateCode...`);
+          await generateCode(session, input, ws);
+          console.log(`[${sessionId}] generateCode completed`);
         } else {
-          console.log(`[${sessionId}] No session found for input`);
+          console.log(`[${sessionId}] ERROR: No session found for input!`);
+          console.log(`[WS] Session map has ${sessions.size} entries`);
+          ws.send(JSON.stringify({ type: 'error', message: 'No active session' }));
         }
-      } else if (msg.type === 'resize') {
-        const session = sessions.get(sessionId);
-        if (session) {
-          session.ptyProcess.resize(msg.cols, msg.rows);
-          console.log(`Resized PTY to ${msg.cols}x${msg.rows}`);
-        }
+
       } else if (msg.type === 'kill-session') {
-        const session = sessions.get(sessionId);
-        if (session) {
-          session.ptyProcess.kill();
+        if (sessionId && sessions.has(sessionId)) {
           sessions.delete(sessionId);
           console.log(`Session ${sessionId} killed`);
         }
+
       } else if (msg.type === 'spectate-session') {
-        // Allow a connection to spectate a room
         const { roomCode } = msg;
         if (roomCode) {
           spectatingRoom = roomCode;
@@ -560,6 +420,7 @@ wss.on('connection', (ws) => {
           console.log(`Spectator joined room ${roomCode}`);
           ws.send(JSON.stringify({ type: 'spectate-started', roomCode }));
         }
+
       } else if (msg.type === 'leave-spectate') {
         if (spectatingRoom) {
           const spectators = spectatorConnections.get(spectatingRoom);
@@ -573,6 +434,7 @@ wss.on('connection', (ws) => {
           spectatingRoom = null;
         }
       }
+
     } catch (e) {
       console.error('Error processing message:', e);
       ws.send(JSON.stringify({ type: 'error', message: e.message }));
@@ -581,14 +443,9 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     console.log('WebSocket client disconnected');
-    if (sessionId) {
-      const session = sessions.get(sessionId);
-      if (session) {
-        session.ptyProcess.kill();
-        sessions.delete(sessionId);
-      }
+    if (sessionId && sessions.has(sessionId)) {
+      sessions.delete(sessionId);
     }
-    // Clean up spectator connection
     if (spectatingRoom) {
       const spectators = spectatorConnections.get(spectatingRoom);
       if (spectators) {
@@ -605,5 +462,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-// List active sessions endpoint (for debugging)
-console.log('\nActive sessions can be monitored via console logs.');
+console.log('Server ready and waiting for connections...');

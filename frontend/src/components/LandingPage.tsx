@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Leaderboard } from './Leaderboard';
 
 interface LandingPageProps {
   onSelectChallenge?: (challenge: 1 | 2) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) => {
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -181,13 +179,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
               style={{ fontSize: '0.75rem', padding: '16px 32px' }}
             >
               {isAuthenticated ? 'Enter Lobby' : 'Get Started Free'}
-            </button>
-            <button
-              onClick={() => setShowLeaderboard(true)}
-              className="nes-btn"
-              style={{ fontSize: '0.75rem', padding: '16px 32px' }}
-            >
-              View Leaderboard
             </button>
           </div>
         </div>
@@ -589,32 +580,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
           <p style={{ color: '#555', fontSize: '0.6rem' }}>Powered by Claude Code</p>
         </div>
       </footer>
-
-      {/* Leaderboard Modal */}
-      {showLeaderboard && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem',
-            zIndex: 1000,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowLeaderboard(false);
-          }}
-        >
-          <div style={{ width: '100%', maxWidth: '800px', maxHeight: '85vh', overflowY: 'auto' }}>
-            <Leaderboard onClose={() => setShowLeaderboard(false)} />
-          </div>
-        </div>
-      )}
     </div>
   );
 };

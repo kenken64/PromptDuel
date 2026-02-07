@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia';
 import { cors } from '@elysiajs/cors';
 import { db } from './db';
-import { users, prompts, duels, leaderboard } from './db/schema';
+import { users, prompts, duels, leaderboard, challengePrompts } from './db/schema';
 import { evaluateWorkspace, generateGradesMarkdown, saveGradesMarkdown } from './evaluate';
 import { desc, eq } from 'drizzle-orm';
 import { authRoutes } from './routes/auth';
@@ -55,6 +55,16 @@ const app = new Elysia()
       .where(eq(leaderboard.challenge, challengeNum))
       .orderBy(desc(leaderboard.score), desc(leaderboard.createdAt));
     return entries;
+  })
+  // Challenge prompts - sample/answer prompts shown after game ends
+  .get('/challenge-prompts/:challenge', async ({ params }) => {
+    const challengeNum = parseInt(params.challenge);
+    const prompts = await db
+      .select()
+      .from(challengePrompts)
+      .where(eq(challengePrompts.challenge, challengeNum))
+      .orderBy(challengePrompts.promptNumber);
+    return { success: true, prompts };
   })
   .post('/leaderboard', async ({ body }) => {
     const { playerName, challenge, score, maxScore, percentage, grade, promptsUsed } = body as {
