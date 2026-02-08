@@ -76,17 +76,20 @@ function evaluateChallenge1(workspacePath: string, playerName: string): Evaluati
 
   const hasIndexJs = filesFound.includes('index.js');
 
+  // Read ALL .js files in the workspace to capture multi-file implementations
   let codeContent = '';
-  if (hasIndexJs) {
+  const jsFiles = filesFound.filter(f => f.endsWith('.js'));
+  for (const jsFile of jsFiles) {
     try {
-      codeContent = readFileSync(join(workspacePath, 'index.js'), 'utf-8');
+      codeContent += readFileSync(join(workspacePath, jsFile), 'utf-8') + '\n';
     } catch (e) {
-      codeContent = '';
+      // skip unreadable files
     }
   }
 
   // Check if it's just the template (no real implementation)
-  const isOnlyTemplate = codeContent.includes("// Your code goes here") ||
+  const isOnlyTemplate = !hasIndexJs && jsFiles.length === 0 ||
+    (codeContent.includes("// Your code goes here") && codeContent.length < 300) ||
     codeContent.includes("Hello from") ||
     codeContent.length < 200;
 
@@ -207,7 +210,11 @@ function evaluateChallenge1(workspacePath: string, playerName: string): Evaluati
     const hasUnclosedError = codeContent.toLowerCase().includes('unclosed') ||
                              codeContent.toLowerCase().includes('not closed');
     const hasPositionTracking = codeContent.includes('position') ||
-                                (codeContent.includes('i') && codeContent.includes('index'));
+                                codeContent.includes('index') ||
+                                codeContent.includes('charAt') ||
+                                codeContent.includes('line') ||
+                                codeContent.includes('column') ||
+                                codeContent.includes('char ');
 
     if (hasUnmatchedError) {
       errorScore += 5;
@@ -236,11 +243,18 @@ function evaluateChallenge1(workspacePath: string, playerName: string): Evaluati
   let qualityFeedback = '';
 
   if (!isOnlyTemplate) {
-    // Check for proper function definition with validation name
+    // Check for proper function definition (accept common naming patterns)
     const hasValidateFunction = codeContent.includes('function validate') ||
                                codeContent.includes('const validate') ||
-                               codeContent.includes('validateBrackets');
-    const hasModernSyntax = codeContent.includes('const ') && codeContent.includes('let ');
+                               codeContent.includes('validateBrackets') ||
+                               codeContent.includes('function check') ||
+                               codeContent.includes('const check') ||
+                               codeContent.includes('function isValid') ||
+                               codeContent.includes('const isValid') ||
+                               codeContent.includes('function verify') ||
+                               codeContent.includes('class Bracket') ||
+                               codeContent.includes('class Validator');
+    const hasModernSyntax = codeContent.includes('const ') || codeContent.includes('let ');
     const hasExport = codeContent.includes('export') || codeContent.includes('module.exports');
     const hasComments = codeContent.includes('//') || codeContent.includes('/*');
 
@@ -277,14 +291,19 @@ function evaluateChallenge1(workspacePath: string, playerName: string): Evaluati
   if (!isOnlyTemplate) {
     const hasArgvHandling = codeContent.includes('process.argv');
     const hasReadline = codeContent.includes('readline');
-    const hasInteractiveMode = codeContent.includes('question') || codeContent.includes('prompt');
-    const hasHelpFlag = codeContent.includes('--help') || codeContent.includes('-h');
+    const hasInteractiveMode = codeContent.includes('question') || codeContent.includes('prompt') ||
+                               codeContent.includes('input');
+    const hasHelpFlag = codeContent.includes('--help') || codeContent.includes('-h') ||
+                        codeContent.includes('help') || codeContent.includes('usage');
+    const hasColorOutput = codeContent.includes('\\x1b[') || codeContent.includes('\\033[') ||
+                           codeContent.includes('chalk') || codeContent.includes('green') ||
+                           codeContent.includes('red') || codeContent.includes('color');
 
     if (hasArgvHandling) {
       cliScore += 3;
       cliFeedback += 'CLI arguments. ';
     }
-    if (hasReadline && hasInteractiveMode) {
+    if (hasReadline || hasInteractiveMode) {
       cliScore += 4;
       cliFeedback += 'Interactive mode. ';
     }
@@ -331,17 +350,20 @@ function evaluateChallenge2(workspacePath: string, playerName: string): Evaluati
 
   const hasIndexJs = filesFound.includes('index.js');
 
+  // Read ALL .js files in the workspace to capture multi-file implementations
   let codeContent = '';
-  if (hasIndexJs) {
+  const jsFiles = filesFound.filter(f => f.endsWith('.js'));
+  for (const jsFile of jsFiles) {
     try {
-      codeContent = readFileSync(join(workspacePath, 'index.js'), 'utf-8');
+      codeContent += readFileSync(join(workspacePath, jsFile), 'utf-8') + '\n';
     } catch (e) {
-      codeContent = '';
+      // skip unreadable files
     }
   }
 
   // Check if it's just the template (no real implementation)
-  const isOnlyTemplate = codeContent.includes("// Your code goes here") ||
+  const isOnlyTemplate = !hasIndexJs && jsFiles.length === 0 ||
+    (codeContent.includes("// Your code goes here") && codeContent.length < 400) ||
     codeContent.includes("Hello from") ||
     codeContent.length < 300;
 

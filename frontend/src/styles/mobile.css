@@ -1,0 +1,603 @@
+/* =========================================
+   Prompt Duel - Mobile Styles
+   Separate styling for mobile devices
+   ========================================= */
+
+/* =========================================
+   Mobile Layout Classes
+   ========================================= */
+
+/* Hide on mobile */
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+/* Hide on desktop */
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+/* =========================================
+   Mobile Base Styles
+   ========================================= */
+
+@media (max-width: 767px) {
+  /* Page container */
+  .page-container {
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  .page-content {
+    padding: 0.75rem;
+    padding-bottom: 2rem;
+  }
+
+  /* Header - mobile compact version */
+  .app-header {
+    padding: 0.5rem;
+  }
+
+  .app-header .container {
+    padding: 0 0.5rem;
+  }
+
+  /* Logo smaller on mobile */
+  .app-header img {
+    height: 40px !important;
+  }
+
+  /* =========================================
+     Mobile NES.css Overrides
+     ========================================= */
+
+  .nes-container {
+    padding: 0.75rem !important;
+    margin-bottom: 0.75rem;
+  }
+
+  .nes-container.with-title {
+    padding-top: 1.25rem !important;
+  }
+
+  .nes-container.with-title > .title {
+    font-size: 0.55rem;
+    padding: 0 0.25rem;
+  }
+
+  /* Buttons - full width stacked on mobile */
+  .nes-btn {
+    font-size: 0.6rem;
+    padding: 0.75rem 1rem;
+    min-height: 48px;
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Textarea */
+  .nes-textarea {
+    font-size: 0.55rem !important;
+    min-height: 120px !important;
+    padding: 0.5rem !important;
+  }
+
+  /* Input fields */
+  .nes-input {
+    font-size: 0.6rem;
+    padding: 0.5rem;
+    min-height: 44px;
+  }
+
+  /* Select dropdowns */
+  .nes-select {
+    font-size: 0.55rem;
+    min-height: 44px;
+  }
+
+  /* Badges */
+  .nes-badge {
+    font-size: 0.5rem;
+  }
+
+  .nes-badge span {
+    padding: 0.25rem 0.5rem;
+  }
+
+  /* Icons - smaller on mobile */
+  .nes-icon {
+    transform: scale(0.75);
+  }
+
+  .nes-icon.is-small {
+    transform: scale(0.6);
+  }
+
+  .nes-icon.is-large {
+    transform: scale(1);
+  }
+
+  /* =========================================
+     Mobile Page Layouts
+     ========================================= */
+
+  /* Landing page */
+  .mobile-landing {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .mobile-landing .logo-container {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .mobile-landing .logo-container img {
+    height: 80px;
+    margin: 0 auto;
+  }
+
+  .mobile-landing h1 {
+    font-size: 1.25rem;
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-landing .subtitle {
+    font-size: 0.5rem;
+    text-align: center;
+    color: #888;
+    margin-bottom: 2rem;
+  }
+
+  .mobile-landing .button-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* Lobby page */
+  .mobile-lobby {
+    padding-top: 1rem;
+  }
+
+  .mobile-lobby .room-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .mobile-lobby .room-card {
+    padding: 1rem;
+  }
+
+  .mobile-lobby .room-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .mobile-lobby .room-card-title {
+    font-size: 0.6rem;
+    color: #92cc41;
+  }
+
+  .mobile-lobby .room-card-info {
+    font-size: 0.45rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-lobby .room-card-players {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.45rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Waiting room */
+  .mobile-waiting-room .player-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .mobile-waiting-room .player-card {
+    padding: 1rem;
+  }
+
+  .mobile-waiting-room .player-name {
+    font-size: 0.65rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-waiting-room .player-status {
+    font-size: 0.5rem;
+  }
+
+  .mobile-waiting-room .provider-selector {
+    margin-top: 0.75rem;
+  }
+
+  .mobile-waiting-room .chat-section {
+    margin-top: 1rem;
+  }
+
+  /* Game page */
+  .mobile-game {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .mobile-game .battle-arena {
+    order: 1;
+  }
+
+  .mobile-game .scoreboard {
+    order: 2;
+  }
+
+  .mobile-game .chat-section {
+    order: 3;
+  }
+
+  .mobile-game .info-tabs {
+    order: 4;
+  }
+
+  /* Mobile Battle Arena */
+  .mobile-battle-arena .player-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .mobile-battle-arena .player-indicator {
+    padding: 0.5rem;
+    font-size: 0.5rem;
+  }
+
+  .mobile-battle-arena .vs-badge {
+    text-align: center;
+    font-size: 0.7rem;
+    padding: 0.25rem;
+  }
+
+  .mobile-battle-arena .turn-indicator {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-battle-arena .prompt-stats {
+    font-size: 0.4rem;
+  }
+
+  /* Mobile Scoreboard */
+  .mobile-scoreboard {
+    padding: 0.75rem;
+  }
+
+  .mobile-scoreboard .players-container {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .mobile-scoreboard .player-score {
+    text-align: center;
+    flex: 1;
+  }
+
+  .mobile-scoreboard .player-score .name {
+    font-size: 0.45rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mobile-scoreboard .player-score .score {
+    font-size: 1.25rem;
+    font-weight: bold;
+  }
+
+  .mobile-scoreboard .player-score .details {
+    font-size: 0.35rem;
+    color: #888;
+  }
+
+  .mobile-scoreboard .vs {
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  /* Mobile Chat */
+  .mobile-chat {
+    max-height: 200px;
+  }
+
+  .mobile-chat .message {
+    font-size: 0.45rem;
+    padding: 0.4rem 0.5rem;
+  }
+
+  .mobile-chat .message .sender {
+    font-size: 0.4rem;
+  }
+
+  /* Results page */
+  .mobile-results {
+    padding: 0.75rem;
+  }
+
+  .mobile-results .winner-banner {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .mobile-results .winner-banner h2 {
+    font-size: 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .mobile-results .final-scores {
+    margin-bottom: 1rem;
+  }
+
+  .mobile-results .player-result {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .mobile-results .player-result .name {
+    font-size: 0.55rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-results .player-result .score {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mobile-results .player-result .details {
+    font-size: 0.4rem;
+    color: #888;
+  }
+
+  .mobile-results .evaluation-section {
+    margin-bottom: 1rem;
+  }
+
+  .mobile-results .evaluation-table {
+    font-size: 0.35rem;
+  }
+
+  .mobile-results .evaluation-table th,
+  .mobile-results .evaluation-table td {
+    padding: 0.25rem;
+  }
+
+  /* =========================================
+     Mobile Timer
+     ========================================= */
+
+  .mobile-timer {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    min-width: auto;
+  }
+
+  .mobile-timer.is-warning {
+    animation: timer-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes timer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* =========================================
+     Mobile Specific Components
+     ========================================= */
+
+  /* Collapsible sections for mobile */
+  .mobile-collapsible {
+    margin-bottom: 0.75rem;
+  }
+
+  .mobile-collapsible-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #1a1a2e;
+    border: 2px solid #333;
+    cursor: pointer;
+  }
+
+  .mobile-collapsible-header .title {
+    font-size: 0.55rem;
+    color: #92cc41;
+  }
+
+  .mobile-collapsible-header .toggle-icon {
+    font-size: 0.7rem;
+    color: #888;
+    transition: transform 0.2s;
+  }
+
+  .mobile-collapsible.is-open .toggle-icon {
+    transform: rotate(180deg);
+  }
+
+  .mobile-collapsible-content {
+    display: none;
+    padding: 0.75rem;
+    background: #0f0f1a;
+    border: 2px solid #333;
+    border-top: none;
+  }
+
+  .mobile-collapsible.is-open .mobile-collapsible-content {
+    display: block;
+  }
+
+  /* Mobile tab navigation */
+  .mobile-tabs {
+    display: flex;
+    border-bottom: 2px solid #333;
+    margin-bottom: 0.75rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-tab {
+    flex: 0 0 auto;
+    padding: 0.5rem 1rem;
+    font-size: 0.5rem;
+    color: #888;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .mobile-tab.is-active {
+    color: #92cc41;
+    border-bottom-color: #92cc41;
+  }
+
+  .mobile-tab-content {
+    display: none;
+  }
+
+  .mobile-tab-content.is-active {
+    display: block;
+  }
+
+  /* =========================================
+     Mobile Form Elements
+     ========================================= */
+
+  .mobile-form-group {
+    margin-bottom: 1rem;
+  }
+
+  .mobile-form-group label {
+    display: block;
+    font-size: 0.5rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-form-group .hint {
+    font-size: 0.4rem;
+    color: #666;
+    margin-top: 0.25rem;
+  }
+
+  /* =========================================
+     Mobile Utility Classes
+     ========================================= */
+
+  .mobile-text-center {
+    text-align: center;
+  }
+
+  .mobile-text-sm {
+    font-size: 0.5rem;
+  }
+
+  .mobile-text-xs {
+    font-size: 0.4rem;
+  }
+
+  .mobile-mb-1 {
+    margin-bottom: 0.5rem;
+  }
+
+  .mobile-mb-2 {
+    margin-bottom: 1rem;
+  }
+
+  .mobile-mt-1 {
+    margin-top: 0.5rem;
+  }
+
+  .mobile-mt-2 {
+    margin-top: 1rem;
+  }
+
+  .mobile-flex-col {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-gap-1 {
+    gap: 0.5rem;
+  }
+
+  .mobile-gap-2 {
+    gap: 1rem;
+  }
+
+  .mobile-w-full {
+    width: 100%;
+  }
+
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  /* =========================================
+     Mobile Safe Area (notch handling)
+     ========================================= */
+
+  .mobile-safe-top {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+
+  .mobile-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .mobile-safe-left {
+    padding-left: env(safe-area-inset-left, 0);
+  }
+
+  .mobile-safe-right {
+    padding-right: env(safe-area-inset-right, 0);
+  }
+
+  /* =========================================
+     Mobile Touch Improvements
+     ========================================= */
+
+  /* Prevent text selection on interactive elements */
+  .mobile-no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Better touch feedback */
+  .mobile-touch-feedback {
+    -webkit-tap-highlight-color: rgba(146, 204, 65, 0.2);
+  }
+
+  .mobile-touch-feedback:active {
+    opacity: 0.8;
+  }
+}

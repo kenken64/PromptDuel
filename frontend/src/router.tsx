@@ -11,6 +11,9 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { AboutPage } from './pages/AboutPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { WaitingRoom } from './pages/WaitingRoom';
@@ -62,6 +65,14 @@ const router = createBrowserRouter([
         element: <RegisterPage />,
       },
       {
+        path: '/forgot-password',
+        element: <ForgotPasswordPage />,
+      },
+      {
+        path: '/reset-password',
+        element: <ResetPasswordPage />,
+      },
+      {
         path: '/about',
         element: <AboutPage />,
       },
@@ -72,6 +83,10 @@ const router = createBrowserRouter([
           {
             path: '/lobby',
             element: <LobbyPage />,
+          },
+          {
+            path: '/change-password',
+            element: <ChangePasswordPage />,
           },
           {
             path: '/room/:code',

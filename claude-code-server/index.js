@@ -1,9 +1,9 @@
 import { WebSocketServer } from 'ws';
-import Anthropic from '@anthropic-ai/sdk';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import dotenv from 'dotenv';
+import { ProviderFactory, getAvailableProviders, PROVIDER_CONFIG } from './providers/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,10 +16,16 @@ const PORT = 3001;
 const sessions = new Map();
 const spectatorConnections = new Map(); // roomCode -> Set of WebSocket connections
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Log available providers
+console.log('Available AI providers:');
+const availableProviders = getAvailableProviders();
+if (availableProviders.length === 0) {
+  console.warn('WARNING: No AI providers configured! Set at least one API key.');
+} else {
+  availableProviders.forEach(p => {
+    console.log(`  - ${p.name}: ${p.models.map(m => m.name).join(', ')}`);
+  });
+}
 
 // Base directory for player workspaces
 const WORKSPACES_DIR = process.env.WORKSPACES_DIR
@@ -47,49 +53,43 @@ process.on('uncaughtException', (error) => {
 console.log(`Claude Code API Server listening on ws://localhost:${PORT}`);
 console.log(`Workspaces directory: ${WORKSPACES_DIR}`);
 
-if (process.env.ANTHROPIC_API_KEY) {
-  console.log(`Auth: ANTHROPIC_API_KEY is set (${process.env.ANTHROPIC_API_KEY.substring(0, 15)}...)`);
-} else {
-  console.error('ERROR: ANTHROPIC_API_KEY is not set!');
-}
+// Log configured API keys (without revealing them)
+Object.entries(PROVIDER_CONFIG).forEach(([key, config]) => {
+  if (process.env[config.envKey]) {
+    console.log(`Auth: ${config.envKey} is set (${process.env[config.envKey].substring(0, 10)}...)`);
+  }
+});
 
 console.log('\nActive sessions can be monitored via console logs.\n');
 
-// Test Anthropic API connection at startup using fetch directly
-async function testAnthropicConnection() {
-  console.log('[TEST] Testing Anthropic API connection with fetch...');
+// Test available provider connections at startup
+async function testProviderConnections() {
+  const available = getAvailableProviders();
+  if (available.length === 0) {
+    console.warn('[TEST] No providers to test - no API keys configured');
+    return;
+  }
+
+  // Only test the first available provider to avoid startup delays
+  const firstProvider = available[0];
+  console.log(`[TEST] Testing ${firstProvider.name} API connection...`);
+
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 50,
-        messages: [{ role: 'user', content: 'Say "API working" in exactly 2 words.' }],
-      }),
-    });
-
-    console.log('[TEST] Fetch response status:', response.status);
-    const data = await response.json();
-    console.log('[TEST] API Response:', JSON.stringify(data, null, 2));
-
-    if (data.content && data.content[0]) {
-      console.log('[TEST] Anthropic API connection successful!');
-    } else if (data.error) {
-      console.error('[TEST] API Error:', data.error.message);
-    }
+    const provider = ProviderFactory.create(firstProvider.id);
+    const result = await provider.generateCode(
+      'You are a test assistant.',
+      'Say "API working" in exactly 2 words.',
+      50
+    );
+    console.log(`[TEST] ${firstProvider.name} API connection successful!`);
+    console.log(`[TEST] Response: ${result.text.substring(0, 50)}...`);
   } catch (error) {
-    console.error('[TEST] Anthropic API connection FAILED:');
-    console.error('[TEST] Error:', error.message);
+    console.error(`[TEST] ${firstProvider.name} API connection FAILED:`, error.message);
   }
 }
 
 // Run test
-testAnthropicConnection();
+testProviderConnections();
 
 // Helper to sanitize player name for directory
 function sanitizeName(name) {
@@ -206,22 +206,24 @@ function broadcastToSpectators(roomCode, playerName, data) {
   });
 }
 
-// Generate code using Anthropic API
+// Generate code using AI provider
 async function generateCode(session, prompt, ws) {
-  const { playerName, challenge, playerDir, roomCode } = session;
+  const { playerName, challenge, playerDir, roomCode, provider = 'anthropic', model } = session;
   const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
 
   console.log(`[generateCode] Starting for ${playerName}`);
   console.log(`[generateCode] Prompt: "${prompt.substring(0, 100)}..."`);
   console.log(`[generateCode] Challenge: ${challenge}, PlayerDir: ${playerDir}`);
+  console.log(`[generateCode] Provider: ${provider}, Model: ${model}`);
 
   // Send processing started
   console.log(`[generateCode] Sending processing-started...`);
   ws.send(JSON.stringify({ type: 'processing-started' }));
   console.log(`[generateCode] processing-started sent`);
 
-  // Send output to show we're working
-  const startMsg = `\n[Claude API] Processing prompt for ${playerName}...\n`;
+  // Get provider info for display
+  const providerInfo = ProviderFactory.getInfo(provider, model);
+  const startMsg = `\n[${providerInfo.providerName}] Processing prompt for ${playerName} using ${providerInfo.modelName}...\n`;
   ws.send(JSON.stringify({ type: 'output', data: startMsg }));
   broadcastToSpectators(roomCode, playerName, startMsg);
 
@@ -238,47 +240,32 @@ async function generateCode(session, prompt, ws) {
       ? `Current code in index.js:\n\`\`\`javascript\n${currentCode}\n\`\`\`\n\nUser request: ${prompt}\n\nUpdate the code based on the request. Return the COMPLETE updated code.`
       : `User request: ${prompt}\n\nGenerate complete code for index.js.`;
 
-    // Call Anthropic API
-    console.log(`[generateCode] Calling Anthropic API...`);
-    console.log(`[generateCode] Model: claude-sonnet-4-20250514`);
+    // Create provider instance and generate code
+    console.log(`[generateCode] Creating ${provider} provider with model: ${model}`);
+    const aiProvider = ProviderFactory.create(provider, model);
+
+    console.log(`[generateCode] Calling ${providerInfo.providerName} API...`);
     console.log(`[generateCode] User message length: ${userMessage.length}`);
     console.log(`[generateCode] System prompt length: ${config.systemPrompt.length}`);
 
-    console.log(`[generateCode] About to call anthropic.messages.create...`);
-
-    // Use explicit Promise handling to debug
-    const apiPromise = anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8192,
-      system: config.systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    console.log(`[generateCode] API promise created, type: ${typeof apiPromise}`);
-    console.log(`[generateCode] Is promise: ${apiPromise instanceof Promise}`);
-    console.log(`[generateCode] Awaiting API promise...`);
-
     let response;
     try {
-      response = await apiPromise;
+      response = await aiProvider.generateCode(config.systemPrompt, userMessage, 8192);
       console.log(`[generateCode] API call returned successfully`);
     } catch (apiError) {
       console.error(`[generateCode] API CALL FAILED:`);
       console.error(`[generateCode] Error type: ${apiError.constructor.name}`);
       console.error(`[generateCode] Error message: ${apiError.message}`);
-      console.error(`[generateCode] Full error:`, apiError);
       throw apiError;
     }
 
     console.log(`[generateCode] API Response received!`);
-    console.log(`[generateCode] Response ID: ${response.id}`);
     console.log(`[generateCode] Model: ${response.model}`);
-    console.log(`[generateCode] Stop reason: ${response.stop_reason}`);
-    console.log(`[generateCode] Usage: input=${response.usage?.input_tokens}, output=${response.usage?.output_tokens}`);
-    console.log(`[generateCode] Content blocks: ${response.content?.length}`);
+    console.log(`[generateCode] Stop reason: ${response.stopReason}`);
+    console.log(`[generateCode] Usage: input=${response.inputTokens}, output=${response.outputTokens}`);
 
     // Extract the code from response
-    let generatedCode = response.content[0].text;
+    let generatedCode = response.text;
     console.log(`[generateCode] Generated code length: ${generatedCode.length}`);
 
     // Clean up the response - remove markdown code blocks if present
@@ -292,7 +279,7 @@ async function generateCode(session, prompt, ws) {
     console.log(`[${playerName}] Code written to ${indexJsPath}`);
 
     // Send output showing success
-    const successMsg = `\n[Claude API] Code generated successfully!\n[Claude API] Written to: ${indexJsPath}\n[Claude API] Lines: ${generatedCode.split('\n').length}\n`;
+    const successMsg = `\n[${providerInfo.providerName}] Code generated successfully!\n[${providerInfo.providerName}] Model: ${providerInfo.modelName}\n[${providerInfo.providerName}] Written to: ${indexJsPath}\n[${providerInfo.providerName}] Lines: ${generatedCode.split('\n').length}\n`;
     ws.send(JSON.stringify({ type: 'output', data: successMsg }));
     broadcastToSpectators(roomCode, playerName, successMsg);
 
@@ -319,7 +306,7 @@ async function generateCode(session, prompt, ws) {
     if (error.status) console.error(`[generateCode] HTTP Status: ${error.status}`);
     if (error.error) console.error(`[generateCode] API Error details:`, JSON.stringify(error.error));
 
-    const errorMsg = `\n[Claude API] Error: ${error.message}\n`;
+    const errorMsg = `\n[${providerInfo.providerName}] Error: ${error.message}\n`;
     ws.send(JSON.stringify({ type: 'output', data: errorMsg }));
     broadcastToSpectators(roomCode, playerName, errorMsg);
 
@@ -344,7 +331,7 @@ wss.on('connection', (ws) => {
       console.log(`[WS] Received message type: ${msg.type}, sessionId: ${sessionId}`);
 
       if (msg.type === 'start-session') {
-        const { playerName, challenge, roomCode } = msg;
+        const { playerName, challenge, roomCode, provider = 'anthropic', model } = msg;
 
         // Create player workspace
         const sanitizedName = sanitizeName(playerName);
@@ -359,7 +346,17 @@ wss.on('connection', (ws) => {
         // Initialize workspace files
         initializeWorkspace(playerDir, playerName, challenge);
 
-        // Create session
+        // Determine model to use (use provided model or default for provider)
+        let selectedModel = model;
+        if (!selectedModel) {
+          const providerConfig = PROVIDER_CONFIG[provider];
+          if (providerConfig) {
+            const defaultModel = providerConfig.models.find(m => m.default);
+            selectedModel = defaultModel ? defaultModel.id : providerConfig.models[0]?.id;
+          }
+        }
+
+        // Create session with provider info
         sessionId = `${sanitizedName}_${Date.now()}`;
         sessions.set(sessionId, {
           ws,
@@ -367,7 +364,11 @@ wss.on('connection', (ws) => {
           challenge,
           playerDir,
           roomCode,
+          provider,
+          model: selectedModel,
         });
+
+        console.log(`Session ${sessionId} using provider: ${provider}, model: ${selectedModel}`);
 
         console.log(`Session ${sessionId} created for ${playerName}`);
 

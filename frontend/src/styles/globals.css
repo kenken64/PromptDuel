@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "https://unpkg.com/nes.css@latest/css/nes.min.css";
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import "./mobile.css";
 
 * {
   box-sizing: border-box;

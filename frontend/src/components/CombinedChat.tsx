@@ -25,7 +25,7 @@ export function CombinedChat({ messages }: CombinedChatProps) {
             <p>Waiting for the duel to begin...</p>
           </div>
         ) : (
-          messages.map((message, index) => (
+          [...messages].reverse().map((message, index) => (
             <div
               key={index}
               className={`nes-container is-rounded ${

@@ -4,6 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
 import { useSupabaseChat } from '../contexts/SupabaseChatContext';
 import { config } from '../config';
+import { ProviderSelector, PROVIDER_CONFIG, getProviderDisplayName, getDefaultModel, type ProviderKey } from '../components/ProviderSelector';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileWaitingRoomLayout } from '../components/mobile';
 
 export function WaitingRoom() {
   const { code } = useParams<{ code: string }>();
@@ -18,6 +21,7 @@ export function WaitingRoom() {
     leaveRoom,
     connectToRoom,
     disconnectFromRoom,
+    updateProvider,
   } = useRoom();
   const {
     messages: chatMessages,
@@ -32,6 +36,14 @@ export function WaitingRoom() {
   const [error, setError] = useState('');
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Provider selection state
+  const [myProvider, setMyProvider] = useState<ProviderKey>('anthropic');
+  const [myModel, setMyModel] = useState('claude-sonnet-4-20250514');
+  const providerInitializedRef = useRef(false);
+
+  // Mobile detection - must be called before any early returns
+  const isMobile = useIsMobile();
 
   // Fetch room details
   const fetchRoom = async () => {
@@ -113,6 +125,27 @@ export function WaitingRoom() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // Sync provider state from room data - only on initial load
+  useEffect(() => {
+    if (providerInitializedRef.current) return; // Skip if already initialized
+
+    const displayRoom = room || roomData;
+    if (!displayRoom || !user?.id) return;
+
+    const isPlayer1 = displayRoom.player1?.id === user.id;
+    const isPlayer2 = displayRoom.player2?.id === user.id;
+
+    if (isPlayer1 && displayRoom.player1Provider) {
+      setMyProvider(displayRoom.player1Provider as ProviderKey);
+      setMyModel(displayRoom.player1Model || 'claude-sonnet-4-20250514');
+      providerInitializedRef.current = true;
+    } else if (isPlayer2 && displayRoom.player2Provider) {
+      setMyProvider(displayRoom.player2Provider as ProviderKey);
+      setMyModel(displayRoom.player2Model || 'claude-sonnet-4-20250514');
+      providerInitializedRef.current = true;
+    }
+  }, [room, roomData, user?.id]);
+
   // Redirect when game starts
   useEffect(() => {
     if (room?.status === 'playing') {
@@ -123,6 +156,33 @@ export function WaitingRoom() {
       }
     }
   }, [room?.status, role, code, navigate]);
+
+  // Handle provider change
+  const handleProviderChange = async (provider: ProviderKey) => {
+    setMyProvider(provider);
+    // Get default model for the new provider
+    const providerConfig = PROVIDER_CONFIG[provider];
+    const defaultModel = providerConfig.models.find(m => m.default);
+    const newModel = defaultModel ? defaultModel.id : providerConfig.models[0].id;
+    setMyModel(newModel);
+
+    // Update on server
+    const result = await updateProvider(provider, newModel);
+    if (!result.success) {
+      console.error('Failed to update provider:', result.error);
+    }
+  };
+
+  // Handle model change
+  const handleModelChange = async (model: string) => {
+    setMyModel(model);
+
+    // Update on server
+    const result = await updateProvider(myProvider, model);
+    if (!result.success) {
+      console.error('Failed to update model:', result.error);
+    }
+  };
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +202,7 @@ export function WaitingRoom() {
   };
 
   const handleLeaveRoom = async () => {
+    providerInitializedRef.current = false; // Reset for next room
     await leaveRoom(code);
     navigate('/lobby');
   };
@@ -184,6 +245,43 @@ export function WaitingRoom() {
   const bothReady = displayRoom?.player1Ready && displayRoom?.player2Ready;
   const bothPlayersJoined = player1 && player2;
 
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <MobileWaitingRoomLayout
+        roomCode={code || ''}
+        challenge={displayRoom?.challenge || 1}
+        timerMinutes={displayRoom?.timerMinutes || 20}
+        player1={player1}
+        player2={player2}
+        player1Ready={displayRoom?.player1Ready || false}
+        player2Ready={displayRoom?.player2Ready || false}
+        player1Provider={displayRoom?.player1Provider}
+        player1Model={displayRoom?.player1Model}
+        player2Provider={displayRoom?.player2Provider}
+        player2Model={displayRoom?.player2Model}
+        isHost={isHost}
+        currentUserId={user?.id}
+        currentUserIsPlayer1={isPlayer1}
+        currentUserIsPlayer2={isPlayer2}
+        myProvider={myProvider}
+        myModel={myModel}
+        canChangeProvider={!myReady}
+        isSpectator={role === 'spectator'}
+        spectators={displayRoom?.spectators || []}
+        chatMessages={chatMessages}
+        isChatLoading={isChatLoading}
+        onProviderChange={handleProviderChange}
+        onModelChange={handleModelChange}
+        onReady={() => toggleReady()}
+        onStart={handleStartGame}
+        onLeave={handleLeaveRoom}
+        onSendChat={(message) => code ? sendSupabaseMessage(code, message) : undefined}
+      />
+    );
+  }
+
+  // Desktop Layout
   return (
     <div className="page-container font-['Press_Start_2P']">
       <div className="bg-pattern"></div>
@@ -192,11 +290,11 @@ export function WaitingRoom() {
       <header className="app-header p-4">
         <div className="container mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4 animate-fade-in">
-            <i className="nes-icon trophy is-medium trophy-bounce"></i>
+            <img src="/logo.png" alt="Prompt Duel" style={{ height: '70px', width: 'auto' }} />
             <div>
               <h1 className="text-lg text-primary glow-text">Room: {code}</h1>
               <p className="text-xs text-[#92cc41]">
-                Challenge {displayRoom?.challenge} - Waiting for players
+                Challenge {displayRoom?.challenge} | {displayRoom?.timerMinutes || 20}min - Waiting for players
               </p>
             </div>
           </div>
@@ -251,6 +349,28 @@ export function WaitingRoom() {
                     </span>
                   )}
                 </div>
+                {/* Player 1 Provider Info */}
+                {player1 && (
+                  <div className="mt-2" style={{ fontSize: '0.6rem', color: '#888' }}>
+                    {isPlayer1 && !displayRoom?.player1Ready ? (
+                      <ProviderSelector
+                        provider={myProvider}
+                        model={myModel}
+                        onProviderChange={handleProviderChange}
+                        onModelChange={handleModelChange}
+                        disabled={displayRoom?.player1Ready}
+                        compact={true}
+                      />
+                    ) : (
+                      <span>
+                        AI: {getProviderDisplayName(
+                          isPlayer1 ? myProvider : (displayRoom?.player1Provider || 'anthropic') as ProviderKey,
+                          isPlayer1 ? myModel : (displayRoom?.player1Model || 'claude-sonnet-4-20250514')
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {/* Player 1 Ready Button */}
                 {isPlayer1 && (
                   <div className="mt-3">
@@ -291,6 +411,28 @@ export function WaitingRoom() {
                     </span>
                   )}
                 </div>
+                {/* Player 2 Provider Info */}
+                {player2 && (
+                  <div className="mt-2" style={{ fontSize: '0.6rem', color: '#888' }}>
+                    {isPlayer2 && !displayRoom?.player2Ready ? (
+                      <ProviderSelector
+                        provider={myProvider}
+                        model={myModel}
+                        onProviderChange={handleProviderChange}
+                        onModelChange={handleModelChange}
+                        disabled={displayRoom?.player2Ready}
+                        compact={true}
+                      />
+                    ) : (
+                      <span>
+                        AI: {getProviderDisplayName(
+                          isPlayer2 ? myProvider : (displayRoom?.player2Provider || 'anthropic') as ProviderKey,
+                          isPlayer2 ? myModel : (displayRoom?.player2Model || 'claude-sonnet-4-20250514')
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {/* Player 2 Ready Button */}
                 {isPlayer2 && (
                   <div className="mt-3">
@@ -354,7 +496,7 @@ export function WaitingRoom() {
                   No messages yet. Say hello!
                 </p>
               ) : (
-                chatMessages.map((msg, idx) => {
+                [...chatMessages].reverse().map((msg, idx) => {
                   const isCurrentUser = msg.user_id === user?.id || msg.username === user?.username;
                   return (
                     <div
@@ -417,6 +559,9 @@ export function WaitingRoom() {
             </p>
             <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
               Challenge: <span style={{ color: '#209cee', marginLeft: '8px' }}>{displayRoom?.challenge}</span>
+            </p>
+            <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+              Timer: <span style={{ color: '#f7d51d', marginLeft: '8px' }}>{displayRoom?.timerMinutes || 20} min</span>
             </p>
             <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
               Status: <span style={{ color: '#92cc41', marginLeft: '8px' }}>{displayRoom?.status}</span>

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileLandingLayout } from './mobile';
 
 interface LandingPageProps {
   onSelectChallenge?: (challenge: 1 | 2) => void;
@@ -9,6 +11,7 @@ interface LandingPageProps {
 export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) => {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Debug: log auth state
   console.log('Auth state:', { isAuthenticated, user });
@@ -30,6 +33,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
     }
   };
 
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <MobileLandingLayout
+        onLogin={() => navigate('/login')}
+        onRegister={() => navigate('/register')}
+      />
+    );
+  }
+
+  // Desktop Layout
   return (
     <div
       style={{
@@ -253,7 +267,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
               </div>
               <h3 style={{ color: '#92cc41', fontSize: '0.85rem', marginBottom: '12px' }}>Battle</h3>
               <p style={{ color: '#666', fontSize: '0.65rem', lineHeight: '1.8' }}>
-                Take turns crafting prompts for Claude Code in real-time
+                Take turns crafting prompts for AI in real-time
               </p>
             </div>
 
@@ -577,7 +591,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
             />
             <span style={{ fontSize: '0.8rem', color: '#92cc41' }}>Prompt Duel</span>
           </Link>
-          <p style={{ color: '#555', fontSize: '0.6rem' }}>Powered by Claude Code</p>
+          <p style={{ color: '#555', fontSize: '0.6rem' }}>Powered by AI</p>
         </div>
       </footer>
     </div>

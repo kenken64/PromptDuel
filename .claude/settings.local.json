@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api:*)",
+      "Bash(npm run build:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Docker and Railway deployment support\n\n- Add Dockerfile for claude-code-server with node-pty and Claude CLI\n- Add railway.json and railway.toml for Railway deployment\n- Add RAILWAY.md with step-by-step deployment guide for 3 services\n- Update frontend to use environment variables for API URLs\n- Add frontend/src/config.ts for centralized API configuration\n- Update docker-compose.yml to include claude-code-server service\n- Update README.md with comprehensive project documentation\n- Update CLAUDE.md with deployment instructions\n- Update .env.example with all environment variables\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(bun add:*)",
+      "Bash(npm install:*)",
+      "Bash(bun run:*)",
+      "Bash(timeout 5 bun check:*)",
+      "Bash(powershell:*)",
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npx tsx:*)"
+    ]
+  }
+}

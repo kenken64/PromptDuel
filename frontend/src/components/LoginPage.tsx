@@ -81,7 +81,7 @@ export function LoginPage() {
             />
           </div>
 
-          <div className="nes-field mb-6">
+          <div className="nes-field mb-4">
             <label htmlFor="password_field" className="text-gray-300 mb-2 block">Password</label>
             <input
               type="password"
@@ -93,6 +93,12 @@ export function LoginPage() {
               disabled={isLoading}
               autoComplete="current-password"
             />
+          </div>
+
+          <div className="text-right mb-6">
+            <Link to="/forgot-password" className="text-xs text-gray-400 hover:text-[#f7d51d] transition-colors">
+              Forgot password?
+            </Link>
           </div>
 
           <div className="flex flex-col gap-4">

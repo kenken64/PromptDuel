@@ -49,6 +49,8 @@ export function SpectatorView() {
   const [player2Console, setPlayer2Console] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'player1' | 'player2'>('player1');
   const [isFinished, setIsFinished] = useState(false);
+  const [player1Processing, setPlayer1Processing] = useState(false);
+  const [player2Processing, setPlayer2Processing] = useState(false);
 
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
 
@@ -58,6 +60,27 @@ export function SpectatorView() {
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const gameStartTimeRef = useRef<number>(0);
   const gameTotalSecondsRef = useRef<number>(20 * 60);
+  const player1NameRef = useRef<string>('Player 1');
+  const player2NameRef = useRef<string>('Player 2');
+
+  // Derived display names: prefer local state, fall back to room context
+  const p1Name = player1.name !== 'Player 1' ? player1.name : room?.player1?.username || player1.name;
+  const p2Name = player2.name !== 'Player 2' ? player2.name : room?.player2?.username || player2.name;
+
+  // Sync player names from room context whenever it gets populated
+  // (handles case where WaitingRoom's disconnectFromRoom nulled room, then connectToRoom repopulates it)
+  useEffect(() => {
+    const p1Username = room?.player1?.username;
+    const p2Username = room?.player2?.username;
+    if (p1Username && player1.name === 'Player 1') {
+      setPlayer1((prev) => ({ ...prev, name: p1Username }));
+      player1NameRef.current = p1Username;
+    }
+    if (p2Username && player2.name === 'Player 2') {
+      setPlayer2((prev) => ({ ...prev, name: p2Username }));
+      player2NameRef.current = p2Username;
+    }
+  }, [room?.player1?.username, room?.player2?.username, player1.name, player2.name]);
 
   // Fetch room details first to get player names
   useEffect(() => {
@@ -73,9 +96,17 @@ export function SpectatorView() {
         if (data.success && data.room) {
           if (data.room.player1) {
             setPlayer1((prev) => ({ ...prev, name: data.room.player1.username }));
+            player1NameRef.current = data.room.player1.username;
           }
           if (data.room.player2) {
             setPlayer2((prev) => ({ ...prev, name: data.room.player2.username }));
+            player2NameRef.current = data.room.player2.username;
+          }
+          // Set timer from room settings
+          if (data.room.timerMinutes) {
+            const timerSeconds = data.room.timerMinutes * 60;
+            setTimeLeft(timerSeconds);
+            gameTotalSecondsRef.current = timerSeconds;
           }
           // Check if game is active
           if (data.room.status === 'playing') {
@@ -134,6 +165,22 @@ export function SpectatorView() {
           setCurrentTurn('player2');
         }
 
+        // Sync AI processing state
+        if (text.includes('AI is working on')) {
+          if (text.includes(player1NameRef.current)) {
+            setPlayer1Processing(true);
+          } else if (text.includes(player2NameRef.current)) {
+            setPlayer2Processing(true);
+          }
+        }
+        if (text.includes('AI finished processing')) {
+          if (text.includes(player1NameRef.current)) {
+            setPlayer1Processing(false);
+          } else if (text.includes(player2NameRef.current)) {
+            setPlayer2Processing(false);
+          }
+        }
+
         // Sync score updates
         if (text.startsWith('SCORE_UPDATE:')) {
           const parts = text.split(':');
@@ -164,6 +211,8 @@ export function SpectatorView() {
           console.log('[Spectator] Game ended - navigating to results');
           setIsFinished(true);
           setIsActive(false);
+          setPlayer1Processing(false);
+          setPlayer2Processing(false);
           // Navigate to results after a short delay
           setTimeout(() => {
             navigate(`/results/${code}`);
@@ -268,15 +317,20 @@ export function SpectatorView() {
   }, [supabaseMessages, code, navigate]);
 
   // Connect to room WebSocket for spectator updates
+  // NOTE: Do NOT call disconnectFromRoom in cleanup here — it resets room state to null,
+  // which wipes player names when the effect re-runs (e.g., isLoadingRoom changes).
   useEffect(() => {
     if (code && !isLoadingRoom) {
       connectToRoom(code);
     }
+  }, [code, isLoadingRoom, connectToRoom]);
 
+  // Disconnect only on unmount
+  useEffect(() => {
     return () => {
       disconnectFromRoom();
     };
-  }, [code, isLoadingRoom, connectToRoom, disconnectFromRoom]);
+  }, [disconnectFromRoom]);
 
   // Connect to Claude Code server for terminal output (after room data is loaded)
   useEffect(() => {
@@ -412,9 +466,11 @@ export function SpectatorView() {
     if (room) {
       if (room.player1) {
         setPlayer1((prev) => ({ ...prev, name: room.player1!.username }));
+        player1NameRef.current = room.player1.username;
       }
       if (room.player2) {
         setPlayer2((prev) => ({ ...prev, name: room.player2!.username }));
+        player2NameRef.current = room.player2.username;
       }
     }
   }, [room]);
@@ -457,7 +513,7 @@ export function SpectatorView() {
       <div className="page-container flex items-center justify-center font-['Press_Start_2P']">
         <div className="bg-pattern"></div>
         <div className="loading-container">
-          <i className="nes-icon trophy is-large trophy-bounce"></i>
+          <img src="/logo.png" alt="Prompt Duel" style={{ height: '80px', marginBottom: '1rem' }} className="trophy-bounce" />
           <p className="loading-text text-sm">Connecting to game...</p>
         </div>
       </div>
@@ -472,7 +528,7 @@ export function SpectatorView() {
       <header className="app-header p-4">
         <div className="container mx-auto flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4 animate-fade-in">
-            <i className="nes-icon trophy is-medium trophy-bounce"></i>
+            <img src="/logo.png" alt="Prompt Duel" style={{ height: '60px' }} />
             <div>
               <h1 className="text-lg text-primary glow-text">Spectating: {code}</h1>
               <p className="text-xs text-[#92cc41]">
@@ -510,12 +566,134 @@ export function SpectatorView() {
               <p className="text-yellow-400 loading-text">Waiting for game to start...</p>
             </div>
           </div>
-        ) : (
-          <div className="text-center mb-6 animate-fade-in">
-            <div className="nes-container is-dark is-rounded inline-block glow-secondary">
-              <p className="text-[#92cc41]">
-                {currentTurn === 'player1' ? player1.name : player2.name}'s turn
-              </p>
+        ) : null}
+
+        {/* Battle Arena — same style as player pages */}
+        {isActive && (
+          <div className="nes-container is-dark with-title mb-6 animate-fade-in" style={{ position: 'relative' }}>
+            <p className="title" style={{ fontSize: 'clamp(0.7rem, 3vw, 1rem)' }}>
+              Battle Arena
+            </p>
+
+            {/* Player Indicators */}
+            <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2 sm:gap-4">
+              <div
+                className={`nes-container ${currentTurn === 'player1' ? 'is-rounded' : 'is-dark'} ${player1Processing ? 'player-processing' : ''}`}
+                style={{
+                  padding: '0.5rem',
+                  borderColor: player1Processing ? undefined : currentTurn === 'player1' ? '#209cee' : undefined,
+                  borderWidth: currentTurn === 'player1' ? '4px' : undefined,
+                  flex: '1 1 auto',
+                  minWidth: '140px',
+                }}
+              >
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center sm:justify-start">
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    {player1Processing ? (
+                      <span className="think-icon">
+                        <i className="nes-icon coin is-small"></i>
+                      </span>
+                    ) : (
+                      <i className="nes-icon coin is-small"></i>
+                    )}
+                    <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.7rem)' }}>{p1Name}</span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1"
+                    style={{ fontSize: 'clamp(0.4rem, 2vw, 0.6rem)' }}
+                  >
+                    <i className="nes-icon star is-small"></i>
+                    <span>{player1.promptsUsed}/7</span>
+                  </div>
+                  {player1.hasEnded && (
+                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
+                  )}
+                </div>
+                {player1Processing && (
+                  <div className="pixel-load-track is-p1">
+                    <div className="pixel-load-fill" />
+                  </div>
+                )}
+              </div>
+
+              <div className="nes-badge is-splited" style={{ fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)' }}>
+                <span className="is-dark">V</span>
+                <span className="is-primary">S</span>
+              </div>
+
+              <div
+                className={`nes-container ${currentTurn === 'player2' ? 'is-rounded' : 'is-dark'} ${player2Processing ? 'player-processing' : ''}`}
+                style={{
+                  padding: '0.5rem',
+                  borderColor: player2Processing ? undefined : currentTurn === 'player2' ? '#92cc41' : undefined,
+                  borderWidth: currentTurn === 'player2' ? '4px' : undefined,
+                  flex: '1 1 auto',
+                  minWidth: '140px',
+                }}
+              >
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center sm:justify-start">
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    {player2Processing ? (
+                      <span className="think-icon">
+                        <i className="nes-icon coin is-small"></i>
+                      </span>
+                    ) : (
+                      <i className="nes-icon coin is-small"></i>
+                    )}
+                    <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.7rem)' }}>{p2Name}</span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1"
+                    style={{ fontSize: 'clamp(0.4rem, 2vw, 0.6rem)' }}
+                  >
+                    <i className="nes-icon star is-small"></i>
+                    <span>{player2.promptsUsed}/7</span>
+                  </div>
+                  {player2.hasEnded && (
+                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
+                  )}
+                </div>
+                {player2Processing && (
+                  <div className="pixel-load-track">
+                    <div className="pixel-load-fill" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Turn Indicator */}
+            <div className="mb-4 text-center">
+              {(player1Processing || player2Processing) ? (
+                <div className="turn-indicator-active" style={{ display: 'inline-block' }}>
+                  <div
+                    className="nes-container is-dark is-rounded"
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.4rem 1.2rem',
+                      borderColor: currentTurn === 'player1' ? '#209cee' : '#92cc41',
+                      borderWidth: '3px',
+                    }}
+                  >
+                    <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.75rem)', color: currentTurn === 'player1' ? '#209cee' : '#92cc41' }}>
+                      <span className="think-icon" style={{ marginRight: '0.5rem' }}>{'{ }'}</span>
+                      AI coding for {currentTurn === 'player1' ? p1Name : p2Name}
+                      <span className="pixel-dots" style={{ marginLeft: '0.4rem' }}>
+                        <span /><span /><span />
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className={((currentTurn === 'player1' ? player1 : player2).hasEnded) ? '' : 'turn-indicator-active'} style={{ display: 'inline-block' }}>
+                  <div className={`nes-badge ${((currentTurn === 'player1' ? player1 : player2).hasEnded) ? 'is-dark' : currentTurn === 'player1' ? 'is-error' : 'is-success'}`}>
+                    <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.8rem)' }}>
+                      {((currentTurn === 'player1' ? player1 : player2).hasEnded)
+                        ? `${currentTurn === 'player1' ? p1Name : p2Name} has ended`
+                        : `${currentTurn === 'player1' ? p1Name : p2Name}'s Turn!`}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -524,7 +702,7 @@ export function SpectatorView() {
         <div className="nes-container is-dark mb-6 glow-primary animate-fade-in animate-delay-2">
           <div className="flex items-center justify-center gap-8 flex-wrap">
             <div className="text-center animate-slide-left">
-              <p className="text-xs mb-2">{player1.name}</p>
+              <p className="text-xs mb-2">{p1Name}</p>
               <p className="text-2xl text-[#209cee] glow-text">
                 {getFinalScore(player1.score, player1.promptsUsed)}
               </p>
@@ -539,7 +717,7 @@ export function SpectatorView() {
             <div className="vs-divider text-2xl">VS</div>
 
             <div className="text-center animate-slide-right">
-              <p className="text-xs mb-2">{player2.name}</p>
+              <p className="text-xs mb-2">{p2Name}</p>
               <p className="text-2xl text-[#92cc41] glow-text">
                 {getFinalScore(player2.score, player2.promptsUsed)}
               </p>
@@ -564,13 +742,13 @@ export function SpectatorView() {
                 onClick={() => setActiveTab('player1')}
                 className={`nes-btn ${activeTab === 'player1' ? 'is-primary' : ''} text-xs flex-1`}
               >
-                {player1.name}
+                {p1Name}
               </button>
               <button
                 onClick={() => setActiveTab('player2')}
                 className={`nes-btn ${activeTab === 'player2' ? 'is-success' : ''} text-xs flex-1`}
               >
-                {player2.name}
+                {p2Name}
               </button>
             </div>
 
@@ -580,7 +758,7 @@ export function SpectatorView() {
                 <span className="dot red"></span>
                 <span className="dot yellow"></span>
                 <span className="dot green"></span>
-                <span className="text-xs text-gray-400 ml-2">{activeTab === 'player1' ? player1.name : player2.name}'s terminal</span>
+                <span className="text-xs text-gray-400 ml-2">{activeTab === 'player1' ? p1Name : p2Name}'s terminal</span>
               </div>
               <div
                 ref={consoleRef}

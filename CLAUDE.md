@@ -2,6 +2,15 @@
 
 A competitive prompt engineering game where two players take turns crafting prompts for Claude Code.
 
+## Development Rules
+
+**IMPORTANT: Service Management**
+- Always use the provided scripts to start/stop services
+- **Windows (PowerShell)**: `.\scripts\start-all.ps1` and `.\scripts\stop-all.ps1`
+- **Linux/Unix/Git Bash**: `bash scripts/start-all.sh` and `bash scripts/stop-all.sh`
+- Never start individual services manually unless debugging a specific service
+- After schema changes, run `bun run db:setup` in backend, then restart all services using the scripts
+
 ## Project Structure
 
 ```

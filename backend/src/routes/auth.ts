@@ -1,9 +1,11 @@
 import { Elysia, t } from 'elysia';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { db } from '../db';
-import { users, sessions, rooms, roomSpectators } from '../db/schema';
-import { eq, or } from 'drizzle-orm';
+import { users, sessions, rooms, roomSpectators, passwordResetTokens } from '../db/schema';
+import { eq, or, and, gt } from 'drizzle-orm';
 import { authPlugin, getUserFromToken } from '../middleware/auth';
+import { sendPasswordResetEmail } from '../services/email';
 
 const SALT_ROUNDS = 10;
 
@@ -237,4 +239,176 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
       success: true,
       user,
     };
-  });
+  })
+  .post(
+    '/forgot-password',
+    async ({ body, set }) => {
+      const { email } = body;
+
+      try {
+        // Find user by email
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1);
+
+        // Tell user if email doesn't exist
+        if (!user) {
+          set.status = 404;
+          return { success: false, error: 'No account found with this email address' };
+        }
+
+        // Generate a secure random token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+        // Invalidate any existing tokens for this user
+        await db
+          .update(passwordResetTokens)
+          .set({ usedAt: new Date() })
+          .where(eq(passwordResetTokens.userId, user.id));
+
+        // Create new reset token
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          token: resetToken,
+          expiresAt,
+        });
+
+        // Send email
+        const emailResult = await sendPasswordResetEmail(user.email, user.username, resetToken);
+        if (!emailResult.success) {
+          console.error('Failed to send reset email:', emailResult.error);
+          set.status = 500;
+          return { success: false, error: 'Failed to send reset email. Please try again.' };
+        }
+
+        return { success: true, message: 'Password reset link has been sent to your email.' };
+      } catch (error) {
+        console.error('Forgot password error:', error);
+        set.status = 500;
+        return { success: false, error: 'An error occurred. Please try again.' };
+      }
+    },
+    {
+      body: t.Object({
+        email: t.String({ format: 'email' }),
+      }),
+    }
+  )
+  .post(
+    '/reset-password',
+    async ({ body, set }) => {
+      const { token, password } = body;
+
+      try {
+        // Find valid token
+        const [resetToken] = await db
+          .select()
+          .from(passwordResetTokens)
+          .where(
+            and(
+              eq(passwordResetTokens.token, token),
+              gt(passwordResetTokens.expiresAt, new Date())
+            )
+          )
+          .limit(1);
+
+        if (!resetToken) {
+          set.status = 400;
+          return { success: false, error: 'Invalid or expired reset token' };
+        }
+
+        // Check if token was already used
+        if (resetToken.usedAt) {
+          set.status = 400;
+          return { success: false, error: 'This reset link has already been used' };
+        }
+
+        // Hash new password
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+        // Update user password
+        await db
+          .update(users)
+          .set({ passwordHash })
+          .where(eq(users.id, resetToken.userId));
+
+        // Mark token as used
+        await db
+          .update(passwordResetTokens)
+          .set({ usedAt: new Date() })
+          .where(eq(passwordResetTokens.id, resetToken.id));
+
+        // Invalidate all existing sessions for this user
+        await db.delete(sessions).where(eq(sessions.userId, resetToken.userId));
+
+        return { success: true, message: 'Password has been reset successfully. Please log in with your new password.' };
+      } catch (error) {
+        console.error('Reset password error:', error);
+        set.status = 500;
+        return { success: false, error: 'Failed to reset password' };
+      }
+    },
+    {
+      body: t.Object({
+        token: t.String(),
+        password: t.String({ minLength: 6 }),
+      }),
+    }
+  )
+  .post(
+    '/change-password',
+    async ({ bearer, body, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const { currentPassword, newPassword } = body;
+
+      try {
+        // Get user with password hash
+        const [fullUser] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, user.id))
+          .limit(1);
+
+        if (!fullUser) {
+          set.status = 404;
+          return { success: false, error: 'User not found' };
+        }
+
+        // Verify current password
+        const validPassword = await bcrypt.compare(currentPassword, fullUser.passwordHash);
+        if (!validPassword) {
+          set.status = 400;
+          return { success: false, error: 'Current password is incorrect' };
+        }
+
+        // Hash new password
+        const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+        // Update password
+        await db
+          .update(users)
+          .set({ passwordHash })
+          .where(eq(users.id, user.id));
+
+        return { success: true, message: 'Password changed successfully' };
+      } catch (error) {
+        console.error('Change password error:', error);
+        set.status = 500;
+        return { success: false, error: 'Failed to change password' };
+      }
+    },
+    {
+      body: t.Object({
+        currentPassword: t.String(),
+        newPassword: t.String({ minLength: 6 }),
+      }),
+    }
+  );

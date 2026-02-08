@@ -134,7 +134,7 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
         return { success: false, error: 'Unauthorized' };
       }
 
-      const { challenge } = body;
+      const { challenge, timerMinutes = 20 } = body;
 
       // Generate unique room code
       let code = generateRoomCode();
@@ -158,6 +158,7 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
           code,
           hostId: user.id,
           challenge,
+          timerMinutes,
           player1Id: user.id,
         })
         .returning();
@@ -174,6 +175,7 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
     {
       body: t.Object({
         challenge: t.Number({ minimum: 1, maximum: 2 }),
+        timerMinutes: t.Optional(t.Number({ minimum: 20, maximum: 60 })),
       }),
     }
   )
@@ -231,6 +233,16 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
       .innerJoin(users, eq(roomSpectators.userId, users.id))
       .where(eq(roomSpectators.roomId, room.id));
 
+    // Parse evaluation results from JSON
+    let evaluationResults = null;
+    if (room.evaluationResults) {
+      try {
+        evaluationResults = JSON.parse(room.evaluationResults);
+      } catch (e) {
+        console.error('Failed to parse evaluation results:', e);
+      }
+    }
+
     return {
       success: true,
       room: {
@@ -239,6 +251,18 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
         player1,
         player2,
         spectators: spectatorRows,
+        player1Provider: room.player1Provider,
+        player1Model: room.player1Model,
+        player2Provider: room.player2Provider,
+        player2Model: room.player2Model,
+        evaluationResults,
+        player1Score: room.player1Score,
+        player2Score: room.player2Score,
+        player1PromptsUsed: room.player1PromptsUsed,
+        player2PromptsUsed: room.player2PromptsUsed,
+        player1Penalty: room.player1Penalty || 0,
+        player2Penalty: room.player2Penalty || 0,
+        winnerId: room.winnerId,
       },
     };
   })
@@ -562,6 +586,183 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
 
     return { success: true };
   })
+  // Update provider selection for a player
+  .post(
+    '/:code/provider',
+    async ({ params, body, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      const { provider, model } = body;
+
+      // Validate provider
+      const validProviders = ['anthropic', 'openai', 'google'];
+      if (!validProviders.includes(provider)) {
+        set.status = 400;
+        return { success: false, error: `Invalid provider. Valid options: ${validProviders.join(', ')}` };
+      }
+
+      const [room] = await db
+        .select()
+        .from(rooms)
+        .where(eq(rooms.code, params.code))
+        .limit(1);
+
+      if (!room) {
+        set.status = 404;
+        return { success: false, error: 'Room not found' };
+      }
+
+      if (room.status !== 'waiting') {
+        set.status = 400;
+        return { success: false, error: 'Cannot change provider after game has started' };
+      }
+
+      // Determine which player is making the request
+      let updates: Partial<typeof rooms.$inferSelect> = {};
+
+      if (room.player1Id === user.id) {
+        updates = {
+          player1Provider: provider,
+          player1Model: model,
+        };
+      } else if (room.player2Id === user.id) {
+        updates = {
+          player2Provider: provider,
+          player2Model: model,
+        };
+      } else {
+        set.status = 403;
+        return { success: false, error: 'You are not a player in this room' };
+      }
+
+      await db.update(rooms).set(updates).where(eq(rooms.id, room.id));
+
+      // Get updated room
+      const [updatedRoom] = await db
+        .select()
+        .from(rooms)
+        .where(eq(rooms.id, room.id))
+        .limit(1);
+
+      return {
+        success: true,
+        player1Provider: updatedRoom.player1Provider,
+        player1Model: updatedRoom.player1Model,
+        player2Provider: updatedRoom.player2Provider,
+        player2Model: updatedRoom.player2Model,
+      };
+    },
+    {
+      body: t.Object({
+        provider: t.String(),
+        model: t.String(),
+      }),
+    }
+  )
+  // Update penalty score during game (called when duplicate prompts are detected)
+  .post(
+    '/:code/penalty',
+    async ({ params, body, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      const { playerNum, penalty } = body;
+
+      const [room] = await db
+        .select()
+        .from(rooms)
+        .where(eq(rooms.code, params.code))
+        .limit(1);
+
+      if (!room) {
+        set.status = 404;
+        return { success: false, error: 'Room not found' };
+      }
+
+      // Only players in the room can update penalties
+      if (room.player1Id !== user.id && room.player2Id !== user.id) {
+        set.status = 403;
+        return { success: false, error: 'Only players in the room can update penalties' };
+      }
+
+      const updateData = playerNum === 1
+        ? { player1Penalty: penalty }
+        : { player2Penalty: penalty };
+
+      await db.update(rooms).set(updateData).where(eq(rooms.id, room.id));
+
+      console.log(`Room ${room.code} player${playerNum} penalty updated to ${penalty}`);
+
+      return { success: true, penalty };
+    },
+    {
+      body: t.Object({
+        playerNum: t.Number(),
+        penalty: t.Number(),
+      }),
+    }
+  )
+  // Save game results (evaluation, scores, winner)
+  .post(
+    '/:code/results',
+    async ({ params, body, bearer, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      const { evaluationResults, player1Score, player2Score, player1PromptsUsed, player2PromptsUsed, winnerId } = body;
+
+      const [room] = await db
+        .select()
+        .from(rooms)
+        .where(eq(rooms.code, params.code))
+        .limit(1);
+
+      if (!room) {
+        set.status = 404;
+        return { success: false, error: 'Room not found' };
+      }
+
+      // Only players in the room can save results
+      if (room.player1Id !== user.id && room.player2Id !== user.id) {
+        set.status = 403;
+        return { success: false, error: 'Only players in the room can save results' };
+      }
+
+      // Save results
+      await db.update(rooms).set({
+        evaluationResults: evaluationResults ? JSON.stringify(evaluationResults) : null,
+        player1Score,
+        player2Score,
+        player1PromptsUsed,
+        player2PromptsUsed,
+        winnerId,
+      }).where(eq(rooms.id, room.id));
+
+      console.log(`Room ${room.code} results saved by user ${user.id}`);
+
+      return { success: true };
+    },
+    {
+      body: t.Object({
+        evaluationResults: t.Optional(t.Any()),
+        player1Score: t.Optional(t.Number()),
+        player2Score: t.Optional(t.Number()),
+        player1PromptsUsed: t.Optional(t.Number()),
+        player2PromptsUsed: t.Optional(t.Number()),
+        winnerId: t.Optional(t.Nullable(t.Number())),
+      }),
+    }
+  )
   // Delete room (host only)
   .delete('/:code', async ({ params, bearer, set }) => {
     const user = await getUserFromToken(bearer);

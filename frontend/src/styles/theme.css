@@ -519,6 +519,164 @@ body {
 }
 
 /* =========================================
+   AI Processing Animations
+   ========================================= */
+
+/* Pixel progress bar that scrolls across the button */
+@keyframes pixel-march {
+  0% { background-position: 0 0; }
+  100% { background-position: 24px 0; }
+}
+
+.ai-processing-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-processing-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 4px,
+    rgba(255, 255, 255, 0.08) 4px,
+    rgba(255, 255, 255, 0.08) 8px
+  );
+  background-size: 24px 100%;
+  animation: pixel-march 0.6s linear infinite;
+  pointer-events: none;
+}
+
+/* Bouncing pixel dots for loading text */
+@keyframes dot-bounce-1 {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+@keyframes dot-bounce-2 {
+  0%, 70%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+@keyframes dot-bounce-3 {
+  0%, 80%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.pixel-dots span:nth-child(1) { animation: dot-bounce-1 1.2s ease-in-out infinite; }
+.pixel-dots span:nth-child(2) { animation: dot-bounce-2 1.2s ease-in-out infinite; }
+.pixel-dots span:nth-child(3) { animation: dot-bounce-3 1.2s ease-in-out infinite; }
+
+.pixel-dots span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+/* Glowing border for the active player's card when AI is working */
+@keyframes processing-border {
+  0% { border-color: #209cee; box-shadow: 0 0 8px rgba(32, 156, 238, 0.3); }
+  33% { border-color: #92cc41; box-shadow: 0 0 8px rgba(146, 204, 65, 0.3); }
+  66% { border-color: #f7d51d; box-shadow: 0 0 8px rgba(247, 213, 29, 0.3); }
+  100% { border-color: #209cee; box-shadow: 0 0 8px rgba(32, 156, 238, 0.3); }
+}
+
+.player-processing {
+  animation: processing-border 2s linear infinite;
+  border-width: 4px !important;
+}
+
+/* Pixel loading bar inside the player card */
+@keyframes pixel-load-bar {
+  0% { width: 0%; }
+  50% { width: 100%; }
+  50.01% { width: 0%; left: 0; }
+  100% { width: 100%; }
+}
+
+@keyframes pixel-shimmer {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+.pixel-load-track {
+  position: relative;
+  height: 4px;
+  background: #222;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.pixel-load-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    #92cc41 0px,
+    #92cc41 4px,
+    #76a832 4px,
+    #76a832 8px
+  );
+  animation: pixel-load-bar 3s ease-in-out infinite;
+}
+
+.pixel-load-track.is-p1 .pixel-load-fill {
+  background: repeating-linear-gradient(
+    90deg,
+    #209cee 0px,
+    #209cee 4px,
+    #1a7cc0 4px,
+    #1a7cc0 8px
+  );
+}
+
+/* Retro "thinking" icon animation */
+@keyframes think-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes think-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+.think-icon {
+  display: inline-block;
+  animation: think-wiggle 0.8s ease-in-out infinite, think-blink 1.5s ease-in-out infinite;
+}
+
+/* Turn indicator bounce */
+@keyframes turn-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.turn-indicator-active {
+  animation: turn-bounce 1.5s ease-in-out infinite;
+}
+
+/* Waiting pulse for the opponent's turn */
+@keyframes waiting-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.waiting-for-turn {
+  animation: waiting-pulse 2s ease-in-out infinite;
+}
+
+/* =========================================
    Loading States
    ========================================= */
 

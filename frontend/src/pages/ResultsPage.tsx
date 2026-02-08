@@ -5,6 +5,23 @@ import { useRoom } from '../contexts/RoomContext';
 import { useGame } from '../contexts/GameContext';
 import { getFinalScore, getMultiplier } from '../gameRules';
 import { config } from '../config';
+import { getProviderDisplayName, type ProviderKey } from '../components/ProviderSelector';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileResultsLayout } from '../components/mobile';
+
+interface RoomData {
+  player1Provider?: string;
+  player1Model?: string;
+  player2Provider?: string;
+  player2Model?: string;
+  evaluationResults?: any;
+  player1Score?: number;
+  player2Score?: number;
+  player1PromptsUsed?: number;
+  player2PromptsUsed?: number;
+  player1Penalty?: number;
+  player2Penalty?: number;
+}
 
 interface ChallengePrompt {
   id: number;
@@ -17,7 +34,7 @@ interface ChallengePrompt {
 export function ResultsPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { leaveRoom } = useRoom();
   const {
     player1: contextPlayer1,
@@ -30,6 +47,7 @@ export function ResultsPage() {
 
   // Try to load results from localStorage if context is empty
   const [localResults, setLocalResults] = useState<any>(null);
+  const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [samplePrompts, setSamplePrompts] = useState<ChallengePrompt[]>([]);
   const [showSamplePrompts, setShowSamplePrompts] = useState(false);
 
@@ -49,22 +67,81 @@ export function ResultsPage() {
     }
   }, [code]);
 
-  // Use context values if available, otherwise fall back to localStorage
+  // Fetch room data from backend for provider info and evaluation results
+  // Retry fetching if evaluationResults is missing (Player 2 might arrive before Player 1 saves)
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 5;
+
+  useEffect(() => {
+    if (code && token) {
+      const fetchRoomData = async () => {
+        console.log(`Fetching room data for results page... (attempt ${retryCount + 1})`);
+        try {
+          const res = await fetch(`${config.apiUrl}/rooms/${code}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          const data = await res.json();
+          if (data.success && data.room) {
+            console.log('Room data fetched for results:', data.room);
+            setRoomData({
+              player1Provider: data.room.player1Provider,
+              player1Model: data.room.player1Model,
+              player2Provider: data.room.player2Provider,
+              player2Model: data.room.player2Model,
+              evaluationResults: data.room.evaluationResults,
+              player1Score: data.room.player1Score,
+              player2Score: data.room.player2Score,
+              player1PromptsUsed: data.room.player1PromptsUsed,
+              player2PromptsUsed: data.room.player2PromptsUsed,
+              player1Penalty: data.room.player1Penalty || 0,
+              player2Penalty: data.room.player2Penalty || 0,
+            });
+
+            // If evaluationResults is missing and we haven't exceeded retries, try again
+            if (!data.room.evaluationResults && retryCount < maxRetries) {
+              console.log(`evaluationResults not found, retrying in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+              setTimeout(() => setRetryCount(retryCount + 1), 2000);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch room data:', err);
+          // Retry on error
+          if (retryCount < maxRetries) {
+            setTimeout(() => setRetryCount(retryCount + 1), 2000);
+          }
+        }
+      };
+
+      fetchRoomData();
+    }
+  }, [code, token, retryCount]);
+
+  // Use context values if available, otherwise fall back to roomData (backend) or localStorage
   // NOTE: These must be declared BEFORE the useEffect that uses selectedChallenge
   const player1 = contextPlayer1.score > 0 || contextPlayer1.promptsUsed > 0
     ? contextPlayer1
     : localResults?.player1
       ? { ...contextPlayer1, name: localResults.player1.name, score: localResults.player1.score, promptsUsed: localResults.player1.promptsUsed }
-      : contextPlayer1;
+      : roomData?.player1Score !== undefined
+        ? { ...contextPlayer1, score: roomData.player1Score, promptsUsed: roomData.player1PromptsUsed || 0 }
+        : contextPlayer1;
 
   const player2 = contextPlayer2.score > 0 || contextPlayer2.promptsUsed > 0
     ? contextPlayer2
     : localResults?.player2
       ? { ...contextPlayer2, name: localResults.player2.name, score: localResults.player2.score, promptsUsed: localResults.player2.promptsUsed }
-      : contextPlayer2;
+      : roomData?.player2Score !== undefined
+        ? { ...contextPlayer2, score: roomData.player2Score, promptsUsed: roomData.player2PromptsUsed || 0 }
+        : contextPlayer2;
 
-  const evaluationResults = contextEvaluationResults || localResults?.evaluationResults || null;
+  // Prioritize: context > roomData (from backend) > localStorage
+  const evaluationResults = contextEvaluationResults || roomData?.evaluationResults || localResults?.evaluationResults || null;
   const selectedChallenge = contextChallenge || localResults?.challenge || 1;
+
+  // Show loading state if we're still fetching evaluation results
+  const isLoadingResults = !evaluationResults && retryCount < maxRetries && retryCount > 0;
 
   // Calculate final scores first
   const p1FinalScore = getFinalScore(player1.score, player1.promptsUsed);
@@ -102,6 +179,27 @@ export function ResultsPage() {
     navigate('/lobby');
   };
 
+  const isMobile = useIsMobile();
+
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <MobileResultsLayout
+        player1={player1}
+        player2={player2}
+        winner={winner}
+        evaluationResults={evaluationResults}
+        selectedChallenge={selectedChallenge}
+        roomCode={code}
+        roomData={roomData || undefined}
+        samplePrompts={samplePrompts}
+        onPlayAgain={handlePlayAgain}
+        isLoadingResults={isLoadingResults}
+      />
+    );
+  }
+
+  // Desktop Layout
   return (
     <div className="page-container font-['Press_Start_2P']">
       <div className="bg-pattern"></div>
@@ -136,14 +234,14 @@ export function ResultsPage() {
           <div className="nes-container is-dark is-rounded inline-block px-6 sm:px-12 py-4 sm:py-6 glow-primary">
             {winner ? (
               <div className="flex flex-col items-center">
-                <i className="nes-icon trophy is-large mb-4 trophy-bounce" style={{ transform: 'scale(1.5)' }}></i>
+                <span className="trophy-bounce" style={{ fontSize: 'clamp(3rem, 8vw, 5rem)', display: 'block', marginBottom: '0.5rem', filter: 'drop-shadow(0 0 12px rgba(247, 213, 29, 0.6))' }}>🏆</span>
                 <h2 className="glow-text" style={{ fontSize: 'clamp(1rem, 4vw, 1.5rem)', color: '#92cc41' }}>
                   {winner === 'player1' ? player1.name : player2.name} Wins!
                 </h2>
               </div>
             ) : (
               <div className="flex flex-col items-center">
-                <i className="nes-icon star is-large mb-4 icon-spin" style={{ transform: 'scale(1.5)' }}></i>
+                <span className="icon-spin" style={{ fontSize: 'clamp(3rem, 8vw, 5rem)', display: 'block', marginBottom: '0.5rem', filter: 'drop-shadow(0 0 12px rgba(247, 213, 29, 0.6))' }}>⭐</span>
                 <h2 className="glow-text" style={{ fontSize: 'clamp(1rem, 4vw, 1.5rem)', color: '#f7d51d' }}>
                   It's a Tie!
                 </h2>
@@ -173,9 +271,17 @@ export function ResultsPage() {
             >
               <div className="text-center">
                 <div className="flex items-center gap-2 justify-center mb-2">
-                  {winner === 'player1' && <i className="nes-icon trophy is-small"></i>}
+                  {winner === 'player1' && <span style={{ fontSize: 'clamp(1.2rem, 3vw, 1.8rem)', filter: 'drop-shadow(0 0 6px rgba(247, 213, 29, 0.5))' }}>🏆</span>}
                   <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player1.name}</p>
                 </div>
+                {roomData?.player1Provider && (
+                  <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#666', marginBottom: '0.5rem' }}>
+                    {getProviderDisplayName(
+                      roomData.player1Provider as ProviderKey,
+                      roomData.player1Model || 'claude-sonnet-4-20250514'
+                    )}
+                  </p>
+                )}
                 <p className="glow-text mb-2" style={{ fontSize: 'clamp(1.5rem, 5vw, 2.5rem)', color: '#209cee' }}>
                   {p1FinalScore}
                 </p>
@@ -217,9 +323,17 @@ export function ResultsPage() {
             >
               <div className="text-center">
                 <div className="flex items-center gap-2 justify-center mb-2">
-                  {winner === 'player2' && <i className="nes-icon trophy is-small"></i>}
+                  {winner === 'player2' && <span style={{ fontSize: 'clamp(1.2rem, 3vw, 1.8rem)', filter: 'drop-shadow(0 0 6px rgba(247, 213, 29, 0.5))' }}>🏆</span>}
                   <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player2.name}</p>
                 </div>
+                {roomData?.player2Provider && (
+                  <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#666', marginBottom: '0.5rem' }}>
+                    {getProviderDisplayName(
+                      roomData.player2Provider as ProviderKey,
+                      roomData.player2Model || 'claude-sonnet-4-20250514'
+                    )}
+                  </p>
+                )}
                 <p className="glow-text mb-2" style={{ fontSize: 'clamp(1.5rem, 5vw, 2.5rem)', color: '#92cc41' }}>
                   {p2FinalScore}
                 </p>
@@ -248,6 +362,19 @@ export function ResultsPage() {
           </div>
         </div>
 
+        {/* Loading indicator for evaluation results */}
+        {isLoadingResults && (
+          <div className="nes-container is-dark with-title mb-6 sm:mb-8 animate-fade-in">
+            <p className="title" style={{ fontSize: 'clamp(0.6rem, 2.5vw, 0.9rem)' }}>Evaluation Details</p>
+            <div className="text-center py-8">
+              <i className="nes-icon trophy is-medium trophy-bounce"></i>
+              <p className="mt-4" style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.6rem)', color: '#888' }}>
+                Loading evaluation details...
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Detailed Evaluation Results */}
         {evaluationResults && (evaluationResults.player1?.categories || evaluationResults.player2?.categories) && (
           <div className="nes-container is-dark with-title mb-6 sm:mb-8 animate-fade-in animate-delay-2">
@@ -259,10 +386,15 @@ export function ResultsPage() {
                 <div className="nes-container is-rounded" style={{ backgroundColor: 'rgba(32, 156, 238, 0.1)', borderColor: '#209cee', padding: '0.75rem' }}>
                   <div className="flex items-center justify-between mb-3">
                     <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', color: '#209cee' }}>{player1.name}</p>
-                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#209cee' }}>
-                      {evaluationResults.player1.totalScore}/{evaluationResults.player1.maxScore} ({evaluationResults.player1.percentage}%)
+                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: player1.score < evaluationResults.player1.totalScore ? '#e76e55' : '#209cee' }}>
+                      {player1.score}/{evaluationResults.player1.maxScore}
                     </span>
                   </div>
+                  {player1.score < evaluationResults.player1.totalScore && (
+                    <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#e76e55', marginBottom: '0.5rem' }}>
+                      Code evaluation: {evaluationResults.player1.totalScore}/{evaluationResults.player1.maxScore} — Duplicate penalty: -{evaluationResults.player1.totalScore - player1.score} marks
+                    </p>
+                  )}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'clamp(0.35rem, 1.2vw, 0.5rem)' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #333' }}>
@@ -293,10 +425,15 @@ export function ResultsPage() {
                 <div className="nes-container is-rounded" style={{ backgroundColor: 'rgba(146, 204, 65, 0.1)', borderColor: '#92cc41', padding: '0.75rem' }}>
                   <div className="flex items-center justify-between mb-3">
                     <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', color: '#92cc41' }}>{player2.name}</p>
-                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#92cc41' }}>
-                      {evaluationResults.player2.totalScore}/{evaluationResults.player2.maxScore} ({evaluationResults.player2.percentage}%)
+                    <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: player2.score < evaluationResults.player2.totalScore ? '#e76e55' : '#92cc41' }}>
+                      {player2.score}/{evaluationResults.player2.maxScore}
                     </span>
                   </div>
+                  {player2.score < evaluationResults.player2.totalScore && (
+                    <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#e76e55', marginBottom: '0.5rem' }}>
+                      Code evaluation: {evaluationResults.player2.totalScore}/{evaluationResults.player2.maxScore} — Duplicate penalty: -{evaluationResults.player2.totalScore - player2.score} marks
+                    </p>
+                  )}
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'clamp(0.35rem, 1.2vw, 0.5rem)' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #333' }}>

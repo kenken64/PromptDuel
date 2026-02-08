@@ -9,6 +9,9 @@ import { CombinedChat } from '../components/CombinedChat';
 import { InfoTabs } from '../components/InfoTabs';
 import { getFinalScore, getMultiplier } from '../gameRules';
 import { config } from '../config';
+import { getProviderDisplayName, type ProviderKey } from '../components/ProviderSelector';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileGameLayout } from '../components/mobile';
 
 export function GamePage() {
   const { code } = useParams<{ code: string }>();
@@ -107,6 +110,12 @@ export function GamePage() {
 
       setSelectedChallenge(room.challenge as 1 | 2);
 
+      // Set timer from room settings
+      if (room.timerMinutes) {
+        setGameTimeoutMinutes(room.timerMinutes);
+        setTimeLeft(room.timerMinutes * 60);
+      }
+
       if (room.player1) {
         setPlayer1((prev) => ({ ...prev, name: room.player1!.username }));
       }
@@ -129,10 +138,12 @@ export function GamePage() {
         // checking if already connected and room changes
         if (currentUserPlayer === 'player1') {
           console.log('GamePage: Requesting player 1 connection to Claude Code Server');
-          connectPlayer(1, room.player1.username, room.challenge, room.code);
+          console.log('GamePage: Player 1 provider:', room.player1Provider, room.player1Model);
+          connectPlayer(1, room.player1.username, room.challenge, room.code, room.player1Provider, room.player1Model);
         } else if (currentUserPlayer === 'player2') {
           console.log('GamePage: Requesting player 2 connection to Claude Code Server');
-          connectPlayer(2, room.player2.username, room.challenge, room.code);
+          console.log('GamePage: Player 2 provider:', room.player2Provider, room.player2Model);
+          connectPlayer(2, room.player2.username, room.challenge, room.code, room.player2Provider, room.player2Model);
         } else {
           console.log('[GamePage] Not connecting: currentUserPlayer is null');
         }
@@ -206,6 +217,37 @@ export function GamePage() {
     }
   }, [room?.status, code, navigate, winner, isActive, isEvaluating, shouldNavigateToResults]);
 
+  const isMobile = useIsMobile();
+
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <MobileGameLayout
+        player1={player1}
+        player2={player2}
+        currentTurn={currentTurn}
+        timeLeft={timeLeft}
+        isActive={isActive}
+        gameMessages={gameMessages}
+        player1Processing={player1Processing}
+        player2Processing={player2Processing}
+        player1Console={player1Console}
+        player2Console={player2Console}
+        isSpectator={isSpectator}
+        currentUserPlayer={currentUserPlayer}
+        roomCode={code}
+        selectedChallenge={selectedChallenge}
+        room={room}
+        onPromptChange={handlePromptChange}
+        onSubmit={handleSubmit}
+        onEndPrompts={handleEndPrompts}
+        onLeave={handleReset}
+        onEndDuel={handleEndDuel}
+      />
+    );
+  }
+
+  // Desktop Layout
   return (
     <div className="page-container font-['Press_Start_2P']">
       <div className="bg-pattern"></div>
@@ -290,7 +332,7 @@ export function GamePage() {
                 {((currentUserPlayer === 'player1' && player1Connected) ||
                   (currentUserPlayer === 'player2' && player2Connected))
                   ? 'Starting duel...'
-                  : 'Connecting to Claude Code...'}
+                  : 'Connecting to AI Provider...'}
               </p>
             </div>
           </div>
@@ -308,10 +350,19 @@ export function GamePage() {
 
         {/* Duel Active Indicator */}
         {isActive && !isSpectator && (
-          <div className="text-center mb-4 sm:mb-8">
-            <div className="nes-badge inline-block">
-              <span className="is-success" style={{ fontSize: '0.7rem' }}>DUEL IN PROGRESS</span>
-            </div>
+          <div className="text-center mb-4 sm:mb-8" style={{ position: 'relative', zIndex: 1 }}>
+            <span
+              style={{
+                display: 'inline-block',
+                padding: '0.4rem 1rem',
+                backgroundColor: '#92cc41',
+                color: '#fff',
+                fontSize: '0.7rem',
+                fontWeight: 'bold',
+              }}
+            >
+              DUEL IN PROGRESS
+            </span>
           </div>
         )}
 
@@ -353,10 +404,16 @@ export function GamePage() {
           </p>
           <div className="flex items-center justify-center gap-4 sm:gap-8 flex-wrap">
             <div className="text-center animate-slide-left">
-              <div className="flex items-center gap-2 justify-center mb-2">
+              <div className="flex items-center gap-2 justify-center mb-1">
                 <i className="nes-icon trophy is-small sm:is-medium"></i>
                 <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player1.name}</p>
               </div>
+              <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#666', marginBottom: '0.5rem' }}>
+                {getProviderDisplayName(
+                  (room?.player1Provider || 'anthropic') as ProviderKey,
+                  room?.player1Model || 'claude-sonnet-4-20250514'
+                )}
+              </p>
               <p className="glow-text" style={{ fontSize: 'clamp(1.5rem, 5vw, 2rem)', color: '#209cee' }}>
                 {getFinalScore(player1.score, player1.promptsUsed)}
               </p>
@@ -368,10 +425,16 @@ export function GamePage() {
             <div className="vs-divider" style={{ fontSize: 'clamp(1.5rem, 5vw, 2rem)' }}>VS</div>
 
             <div className="text-center animate-slide-right">
-              <div className="flex items-center gap-2 justify-center mb-2">
+              <div className="flex items-center gap-2 justify-center mb-1">
                 <i className="nes-icon trophy is-small sm:is-medium"></i>
                 <p style={{ fontSize: 'clamp(0.5rem, 2vw, 0.7rem)' }}>{player2.name}</p>
               </div>
+              <p style={{ fontSize: 'clamp(0.35rem, 1.2vw, 0.45rem)', color: '#666', marginBottom: '0.5rem' }}>
+                {getProviderDisplayName(
+                  (room?.player2Provider || 'anthropic') as ProviderKey,
+                  room?.player2Model || 'claude-sonnet-4-20250514'
+                )}
+              </p>
               <p className="glow-text" style={{ fontSize: 'clamp(1.5rem, 5vw, 2rem)', color: '#92cc41' }}>
                 {getFinalScore(player2.score, player2.promptsUsed)}
               </p>

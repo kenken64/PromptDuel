@@ -24,12 +24,17 @@ interface Room {
   id: number;
   code: string;
   challenge: number;
+  timerMinutes: number;
   status: 'waiting' | 'playing' | 'finished';
   hostId: number;
   player1: Player | null;
   player2: Player | null;
   player1Ready: boolean;
   player2Ready: boolean;
+  player1Provider: string;
+  player1Model: string;
+  player2Provider: string;
+  player2Model: string;
   spectators: Spectator[];
 }
 
@@ -41,7 +46,7 @@ interface RoomContextType {
   isLoading: boolean;
   error: string | null;
   // Actions
-  createRoom: (challenge: number) => Promise<{ success: boolean; code?: string; error?: string }>;
+  createRoom: (challenge: number, timerMinutes?: number) => Promise<{ success: boolean; code?: string; error?: string }>;
   joinRoom: (code: string) => Promise<{ success: boolean; error?: string }>;
   spectateRoom: (code: string) => Promise<{ success: boolean; error?: string }>;
   leaveRoom: (roomCode?: string) => Promise<void>;
@@ -51,6 +56,7 @@ interface RoomContextType {
   sendChatMessage: (message: string) => void;
   connectToRoom: (code: string) => void;
   disconnectFromRoom: () => void;
+  updateProvider: (provider: string, model: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const RoomContext = createContext<RoomContextType | null>(null);
@@ -90,12 +96,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
             code: msg.room.code,
             id: 0, // Will be set from other sources
             challenge: msg.room.challenge,
+            timerMinutes: msg.room.timerMinutes || 20,
             status: msg.room.status,
             hostId: 0,
             player1: msg.room.player1,
             player2: msg.room.player2,
             player1Ready: msg.room.player1Ready,
             player2Ready: msg.room.player2Ready,
+            player1Provider: msg.room.player1Provider || 'anthropic',
+            player1Model: msg.room.player1Model || 'claude-sonnet-4-20250514',
+            player2Provider: msg.room.player2Provider || 'anthropic',
+            player2Model: msg.room.player2Model || 'claude-sonnet-4-20250514',
             spectators: msg.room.spectators || [],
           });
           setRole(msg.role);
@@ -112,12 +123,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
                   id: 0,
                   code: msg.room.code,
                   challenge: msg.room.challenge,
+                  timerMinutes: msg.room.timerMinutes || 20,
                   status: msg.room.status,
                   hostId: 0,
                   player1: msg.room.player1,
                   player2: msg.room.player2,
                   player1Ready: msg.room.player1Ready,
                   player2Ready: msg.room.player2Ready,
+                  player1Provider: msg.room.player1Provider || 'anthropic',
+                  player1Model: msg.room.player1Model || 'claude-sonnet-4-20250514',
+                  player2Provider: msg.room.player2Provider || 'anthropic',
+                  player2Model: msg.room.player2Model || 'claude-sonnet-4-20250514',
                   spectators: msg.room.spectators || [],
                 };
               }
@@ -127,6 +143,10 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
                 player2: msg.room.player2,
                 player1Ready: msg.room.player1Ready,
                 player2Ready: msg.room.player2Ready,
+                player1Provider: msg.room.player1Provider || prev.player1Provider,
+                player1Model: msg.room.player1Model || prev.player1Model,
+                player2Provider: msg.room.player2Provider || prev.player2Provider,
+                player2Model: msg.room.player2Model || prev.player2Model,
                 spectators: msg.room.spectators || [],
               };
             });
@@ -160,12 +180,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
                   id: 0,
                   code: msg.room.code,
                   challenge: msg.room.challenge,
+                  timerMinutes: msg.room.timerMinutes || 20,
                   status: msg.room.status,
                   hostId: 0,
                   player1: msg.room.player1,
                   player2: msg.room.player2,
                   player1Ready: msg.room.player1Ready,
                   player2Ready: msg.room.player2Ready,
+                  player1Provider: msg.room.player1Provider || 'anthropic',
+                  player1Model: msg.room.player1Model || 'claude-sonnet-4-20250514',
+                  player2Provider: msg.room.player2Provider || 'anthropic',
+                  player2Model: msg.room.player2Model || 'claude-sonnet-4-20250514',
                   spectators: msg.room.spectators || [],
                 };
               }
@@ -173,6 +198,10 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
                 ...prev,
                 player1: msg.room.player1,
                 player2: msg.room.player2,
+                player1Provider: msg.room.player1Provider || prev.player1Provider,
+                player1Model: msg.room.player1Model || prev.player1Model,
+                player2Provider: msg.room.player2Provider || prev.player2Provider,
+                player2Model: msg.room.player2Model || prev.player2Model,
                 spectators: msg.room.spectators || [],
               };
             });
@@ -327,7 +356,8 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
   }, [disconnectWebSocket]);
 
   const createRoom = async (
-    challenge: number
+    challenge: number,
+    timerMinutes: number = 20
   ): Promise<{ success: boolean; code?: string; error?: string }> => {
     if (!token) return { success: false, error: 'Not authenticated' };
 
@@ -341,7 +371,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ challenge }),
+        body: JSON.stringify({ challenge, timerMinutes }),
       });
 
       const data = await response.json();
@@ -502,12 +532,17 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
               id: data.room.id,
               code: data.room.code,
               challenge: data.room.challenge,
+              timerMinutes: data.room.timerMinutes || 20,
               status: data.room.status,
               hostId: data.room.hostId,
               player1: data.room.player1,
               player2: data.room.player2,
               player1Ready: data.room.player1Ready,
               player2Ready: data.room.player2Ready,
+              player1Provider: data.room.player1Provider || 'anthropic',
+              player1Model: data.room.player1Model || 'claude-sonnet-4-20250514',
+              player2Provider: data.room.player2Provider || 'anthropic',
+              player2Model: data.room.player2Model || 'claude-sonnet-4-20250514',
               spectators: data.room.spectators || [],
             };
           }
@@ -570,6 +605,49 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
       );
     } else {
       console.warn('Cannot send chat message: WebSocket not ready or not authenticated');
+    }
+  };
+
+  const updateProvider = async (
+    provider: string,
+    model: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const roomCode = room?.code || pendingRoomCodeRef.current;
+    if (!token || !roomCode) {
+      return { success: false, error: 'Not authenticated or no room' };
+    }
+
+    try {
+      const response = await fetch(`${config.apiUrl}/rooms/${roomCode}/provider`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ provider, model }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update local room state with new provider info
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            player1Provider: data.player1Provider,
+            player1Model: data.player1Model,
+            player2Provider: data.player2Provider,
+            player2Model: data.player2Model,
+          };
+        });
+        return { success: true };
+      } else {
+        return { success: false, error: data.error };
+      }
+    } catch (error) {
+      console.error('Update provider error:', error);
+      return { success: false, error: 'Network error' };
     }
   };
 
@@ -639,6 +717,7 @@ export function RoomProvider({ children }: { children: React.ReactNode }) {
         sendChatMessage,
         connectToRoom,
         disconnectFromRoom,
+        updateProvider,
       }}
     >
       {children}
