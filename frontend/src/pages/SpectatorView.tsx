@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
+import { useSupabaseGame } from '../contexts/SupabaseGameContext';
 import { config } from '../config';
 import { Timer } from '../components/Timer';
 import { CombinedChat } from '../components/CombinedChat';
@@ -18,7 +19,7 @@ interface Message {
   sender: string;
   text: string;
   timestamp: number;
-  type: 'player1' | 'player2' | 'judge';
+  type: 'player1' | 'player2' | 'judge' | 'system';
 }
 
 export function SpectatorView() {
@@ -26,6 +27,7 @@ export function SpectatorView() {
   const navigate = useNavigate();
   const { token, user } = useAuth();
   const { room, leaveRoom, connectToRoom, disconnectFromRoom } = useRoom();
+  const { messages: supabaseMessages, subscribeToGame, unsubscribeFromGame } = useSupabaseGame();
 
   const [player1, setPlayer1] = useState<PlayerState>({
     name: 'Player 1',
@@ -43,7 +45,6 @@ export function SpectatorView() {
   const [currentTurn, setCurrentTurn] = useState<'player1' | 'player2'>('player1');
   const [timeLeft, setTimeLeft] = useState(20 * 60);
   const [isActive, setIsActive] = useState(false);
-  const [gameMessages, setGameMessages] = useState<Message[]>([]);
   const [player1Console, setPlayer1Console] = useState<string[]>([]);
   const [player2Console, setPlayer2Console] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'player1' | 'player2'>('player1');
@@ -54,6 +55,9 @@ export function SpectatorView() {
   const consoleRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const claudeWsRef = useRef<WebSocket | null>(null);
+  const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  const gameStartTimeRef = useRef<number>(0);
+  const gameTotalSecondsRef = useRef<number>(20 * 60);
 
   // Fetch room details first to get player names
   useEffect(() => {
@@ -87,6 +91,181 @@ export function SpectatorView() {
 
     fetchRoom();
   }, [code, token]);
+
+  // Subscribe to Supabase game messages for real-time updates
+  useEffect(() => {
+    if (code && !isLoadingRoom) {
+      console.log('[Spectator] Subscribing to Supabase game messages for room:', code);
+      subscribeToGame(code);
+    }
+
+    return () => {
+      unsubscribeFromGame();
+    };
+  }, [code, isLoadingRoom, subscribeToGame, unsubscribeFromGame]);
+
+  // Process Supabase messages to sync game state (scores, turns, game end)
+  useEffect(() => {
+    if (supabaseMessages.length === 0) return;
+
+    for (const message of supabaseMessages) {
+      // Create a unique ID for each message
+      const messageId = `${message.timestamp}-${message.sender}-${message.text.substring(0, 50)}`;
+
+      // Skip if already processed
+      if (processedMessageIdsRef.current.has(messageId)) {
+        continue;
+      }
+
+      // Mark as processed
+      processedMessageIdsRef.current.add(messageId);
+      console.log('[Spectator Supabase] Processing message:', message);
+
+      // Process system messages
+      if (message.type === 'system' && message.sender === 'System') {
+        const text = message.text;
+
+        // Sync turn changes
+        if (text.startsWith('TURN:player1')) {
+          console.log('[Spectator] Turn switch to player1');
+          setCurrentTurn('player1');
+        } else if (text.startsWith('TURN:player2')) {
+          console.log('[Spectator] Turn switch to player2');
+          setCurrentTurn('player2');
+        }
+
+        // Sync score updates
+        if (text.startsWith('SCORE_UPDATE:')) {
+          const parts = text.split(':');
+          if (parts.length >= 3) {
+            const playerKey = parts[1];
+            const score = parseInt(parts[2], 10);
+            const promptsUsed = parts.length >= 4 ? parseInt(parts[3], 10) : undefined;
+            console.log(`[Spectator] Score update: ${playerKey} = ${score}, promptsUsed = ${promptsUsed}`);
+
+            if (playerKey === 'player1') {
+              setPlayer1((prev) => ({
+                ...prev,
+                score,
+                ...(promptsUsed !== undefined && { promptsUsed }),
+              }));
+            } else if (playerKey === 'player2') {
+              setPlayer2((prev) => ({
+                ...prev,
+                score,
+                ...(promptsUsed !== undefined && { promptsUsed }),
+              }));
+            }
+          }
+        }
+
+        // Handle game end - navigate to results
+        if (text.startsWith('GAME_END')) {
+          console.log('[Spectator] Game ended - navigating to results');
+          setIsFinished(true);
+          setIsActive(false);
+          // Navigate to results after a short delay
+          setTimeout(() => {
+            navigate(`/results/${code}`);
+          }, 2000);
+        }
+
+        // Handle RESULTS message - save results to localStorage for the results page
+        if (text.startsWith('RESULTS:')) {
+          console.log('[Spectator] Results received');
+          try {
+            const resultsJson = text.substring('RESULTS:'.length);
+            const gameResults = JSON.parse(resultsJson);
+            console.log('[Spectator] Saving results to localStorage:', gameResults);
+            localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
+            // Update local player state with final scores
+            if (gameResults.player1) {
+              setPlayer1((prev) => ({
+                ...prev,
+                score: gameResults.player1.score,
+                promptsUsed: gameResults.player1.promptsUsed,
+              }));
+            }
+            if (gameResults.player2) {
+              setPlayer2((prev) => ({
+                ...prev,
+                score: gameResults.player2.score,
+                promptsUsed: gameResults.player2.promptsUsed,
+              }));
+            }
+          } catch (e) {
+            console.error('[Spectator] Failed to parse results:', e);
+          }
+        }
+      }
+
+      // Sync game start from judge message
+      if (message.type === 'judge' && message.sender === 'Judge Alpha') {
+        if (message.text.includes('Challenge') && message.text.includes('begins!')) {
+          console.log('[Spectator] Game started');
+          setIsActive(true);
+
+          // Parse start timestamp and total seconds from message: [START:timestamp:totalSeconds]
+          const startMatch = message.text.match(/\[START:(\d+):(\d+)\]/);
+          if (startMatch) {
+            const startTime = parseInt(startMatch[1], 10);
+            const totalSeconds = parseInt(startMatch[2], 10);
+            gameStartTimeRef.current = startTime;
+            gameTotalSecondsRef.current = totalSeconds;
+
+            // Calculate remaining time based on elapsed time
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const remaining = Math.max(0, totalSeconds - elapsed);
+            console.log(`[Spectator] Timer sync: startTime=${startTime}, totalSeconds=${totalSeconds}, elapsed=${elapsed}, remaining=${remaining}`);
+            setTimeLeft(remaining);
+          }
+        }
+        // Check for evaluation complete (game end)
+        if (message.text.includes('Evaluation complete!')) {
+          console.log('[Spectator] Evaluation complete - navigating to results');
+          setIsFinished(true);
+          setIsActive(false);
+          setTimeout(() => {
+            navigate(`/results/${code}`);
+          }, 2000);
+        }
+      }
+
+      // Sync prompts used from player messages
+      if (message.type === 'player1' || message.type === 'player2') {
+        const promptMatch = message.text.match(/Prompt #(\d+):/);
+        if (promptMatch) {
+          const promptNum = parseInt(promptMatch[1], 10);
+          if (message.type === 'player1') {
+            setPlayer1((prev) => ({
+              ...prev,
+              promptsUsed: Math.max(prev.promptsUsed, promptNum),
+            }));
+          } else {
+            setPlayer2((prev) => ({
+              ...prev,
+              promptsUsed: Math.max(prev.promptsUsed, promptNum),
+            }));
+          }
+        }
+
+        // Sync hasEnded
+        if (message.text.includes('Has ended their prompts early!')) {
+          if (message.type === 'player1') {
+            setPlayer1((prev) => ({ ...prev, hasEnded: true }));
+          } else {
+            setPlayer2((prev) => ({ ...prev, hasEnded: true }));
+          }
+        }
+      }
+    }
+
+    // Limit processed IDs to prevent memory issues
+    if (processedMessageIdsRef.current.size > 500) {
+      const idsArray = Array.from(processedMessageIdsRef.current);
+      processedMessageIdsRef.current = new Set(idsArray.slice(-250));
+    }
+  }, [supabaseMessages, code, navigate]);
 
   // Connect to room WebSocket for spectator updates
   useEffect(() => {
@@ -203,9 +382,6 @@ export function SpectatorView() {
               if (msg.data.isActive !== undefined) {
                 setIsActive(msg.data.isActive);
               }
-              if (msg.data.message) {
-                setGameMessages((prev) => [...prev, msg.data.message]);
-              }
             }
             break;
 
@@ -243,12 +419,20 @@ export function SpectatorView() {
     }
   }, [room]);
 
-  // Timer countdown (spectator also counts down locally)
+  // Timer countdown (spectator syncs with game start time)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft((time) => time - 1);
+        // If we have a game start time, calculate remaining based on elapsed
+        if (gameStartTimeRef.current > 0) {
+          const elapsed = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+          const remaining = Math.max(0, gameTotalSecondsRef.current - elapsed);
+          setTimeLeft(remaining);
+        } else {
+          // Fallback to local countdown
+          setTimeLeft((time) => Math.max(0, time - 1));
+        }
       }, 1000);
     }
     return () => clearInterval(interval);
@@ -424,7 +608,7 @@ export function SpectatorView() {
 
           {/* Chat & Commentary Section (Read-only for spectators) */}
           <div className="animate-fade-in animate-delay-4">
-            <CombinedChat messages={gameMessages} />
+            <CombinedChat messages={supabaseMessages} />
             <div
               className="mt-2 text-center"
               style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.55rem)', color: '#666' }}
