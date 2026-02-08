@@ -1,17 +1,17 @@
-# Stop Claude Code Server Script
-# This script stops the Claude Code WebSocket terminal server
+# Stop AI Code Server Script
+# This script stops the AI Code Generation WebSocket server
 
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ServerDir = Join-Path $ScriptDir "..\claude-code-server"
-$PidFile = Join-Path $ServerDir ".claude-code-server.pid"
+$ServerDir = Join-Path $ScriptDir "..\ai-code-server"
+$PidFile = Join-Path $ServerDir ".ai-code-server.pid"
 
-Write-Host "Stopping Claude Code Server..."
+Write-Host "Stopping AI Code Server..."
 
 # Check if PID file exists
 if (-not (Test-Path $PidFile)) {
-    Write-Host "Claude Code Server is not running (no PID file found)"
+    Write-Host "AI Code Server is not running (no PID file found)"
     exit 0
 }
 
@@ -20,13 +20,13 @@ $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
 
 # Check if process is running
 if (-not $Process) {
-    Write-Host "Claude Code Server is not running (process $ProcessId not found)"
+    Write-Host "AI Code Server is not running (process $ProcessId not found)"
     Remove-Item $PidFile
     exit 0
 }
 
 # Kill the process
-Write-Host "Stopping Claude Code Server process $ProcessId..."
+Write-Host "Stopping AI Code Server process $ProcessId..."
 Stop-Process -Id $ProcessId -Force
 
 # Wait for process to stop
@@ -34,7 +34,7 @@ $timeout = 10
 for ($i = 0; $i -lt $timeout; $i++) {
     $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if (-not $Process) {
-        Write-Host "Claude Code Server stopped successfully"
+        Write-Host "AI Code Server stopped successfully"
         Remove-Item $PidFile
         exit 0
     }
@@ -44,8 +44,8 @@ for ($i = 0; $i -lt $timeout; $i++) {
 # Check one more time and clean up
 $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
 if ($Process) {
-    Write-Host "Force stopping Claude Code Server..."
+    Write-Host "Force stopping AI Code Server..."
     Stop-Process -Id $ProcessId -Force
 }
 Remove-Item $PidFile
-Write-Host "Claude Code Server stopped"
+Write-Host "AI Code Server stopped"

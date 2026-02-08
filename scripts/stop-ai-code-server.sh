@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# Stop Claude Code Server Script
-# This script stops the Claude Code WebSocket terminal server
+# Stop AI Code Server Script
+# This script stops the AI Code Generation WebSocket server
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_DIR="$SCRIPT_DIR/../claude-code-server"
-PID_FILE="$SERVER_DIR/.claude-code-server.pid"
+SERVER_DIR="$SCRIPT_DIR/../ai-code-server"
+PID_FILE="$SERVER_DIR/.ai-code-server.pid"
 
-echo "Stopping Claude Code Server..."
+echo "Stopping AI Code Server..."
 
 # Check if PID file exists
 if [ ! -f "$PID_FILE" ]; then
-    echo "Claude Code Server is not running (no PID file found)"
+    echo "AI Code Server is not running (no PID file found)"
     exit 0
 fi
 
@@ -21,19 +21,19 @@ PID=$(cat "$PID_FILE")
 
 # Check if process is running
 if ! ps -p "$PID" > /dev/null 2>&1; then
-    echo "Claude Code Server is not running (process $PID not found)"
+    echo "AI Code Server is not running (process $PID not found)"
     rm "$PID_FILE"
     exit 0
 fi
 
 # Kill the process
-echo "Stopping Claude Code Server process $PID..."
+echo "Stopping AI Code Server process $PID..."
 kill "$PID"
 
 # Wait for process to stop
 for i in {1..10}; do
     if ! ps -p "$PID" > /dev/null 2>&1; then
-        echo "Claude Code Server stopped successfully"
+        echo "AI Code Server stopped successfully"
         rm "$PID_FILE"
         exit 0
     fi
@@ -42,11 +42,11 @@ done
 
 # Force kill if still running
 if ps -p "$PID" > /dev/null 2>&1; then
-    echo "Force stopping Claude Code Server..."
+    echo "Force stopping AI Code Server..."
     kill -9 "$PID"
     rm "$PID_FILE"
-    echo "Claude Code Server force stopped"
+    echo "AI Code Server force stopped"
 else
     rm "$PID_FILE"
-    echo "Claude Code Server stopped"
+    echo "AI Code Server stopped"
 fi

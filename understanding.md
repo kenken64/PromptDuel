@@ -1,7 +1,7 @@
 # Prompt Duel - Codebase Understanding
 
 ## 1. Project Overview
-**Prompt Duel** is a competitive multiplayer game where two players battle to write the most efficient prompts for Claude Code (Anthropic's CLI agent). Players are given a coding challenge and must instruct Claude to solve it using as few prompts as possible.
+**Prompt Duel** is a competitive multiplayer game where two players battle to write the most efficient prompts for AI code generation. Players are given a coding challenge and must instruct the AI to solve it using as few prompts as possible.
 
 ## 2. Technology Stack
 The project is a monorepo divided into three main services:
@@ -19,12 +19,12 @@ The project is a monorepo divided into three main services:
 *   **Database**: SQLite with Drizzle ORM
 *   **Role**: Handles user authentication, room management, matchmaking, leaderboards, and solution evaluation.
 
-### **Claude Code Server** (`/claude-code-server`)
+### **AI Code Server** (`/ai-code-server`)
 *   **Runtime**: Node.js
-*   **Key Libraries**: 
-    *   `node-pty`: For spawning persistent terminal processes.
-    *   `ws`: WebSocket server for real-time terminal streaming.
-*   **Role**: Spawns real terminal sessions for each player, runs the `claude` CLI, and streams the input/output to the frontend in real-time.
+*   **Key Libraries**:
+    *   `@anthropic-ai/sdk`, `openai`, `@google/generative-ai`: Multi-provider AI SDKs.
+    *   `ws`: WebSocket server for real-time communication.
+*   **Role**: Receives prompts from players, generates code via AI provider APIs (Anthropic, OpenAI, Google), writes code to player workspaces, and streams output to the frontend in real-time.
 
 ## 3. Architecture & Data Flow
 
@@ -32,23 +32,23 @@ The project is a monorepo divided into three main services:
 graph TD
     User[User Browser] -->|HTTP/REST| Backend[Backend API :3000]
     User -->|WebSocket| Backend
-    User -->|WebSocket| CCS[Claude Code Server :3001]
-    
+    User -->|WebSocket| ACS[AI Code Server :3001]
+
     Backend -->|Read/Write| DB[(SQLite Database)]
-    
-    CCS -->|Spawn| PTY[node-pty Session]
-    PTY -->|Run| Claude[Claude CLI]
-    Claude -->|Edit Files| Workspace[./workspaces/Player_Challenge]
+
+    ACS -->|API Call| AI[AI Providers]
+    AI -->|Anthropic/OpenAI/Google| Response[Generated Code]
+    ACS -->|Write Files| Workspace[./workspaces/Player_Challenge]
     
     Backend -->|Read Files| Workspace
 ```
 
 1.  **Rooms**: Players allow the Backend to match them into a room.
-2.  **Session Start**: The Frontend connects to the Claude Code Server via WebSocket to start a PTY session.
-3.  **Game Loop**: 
+2.  **Session Start**: The Frontend connects to the AI Code Server via WebSocket to start a session.
+3.  **Game Loop**:
     *   Players submit a prompt text.
-    *   The CCS pipes this prompt into the specific PTY session running `claude`.
-    *   Output is streamed back to the client.
+    *   The ACS sends the prompt to the selected AI provider API.
+    *   Generated code is written to the workspace and output is streamed back to the client.
 4.  **Evaluation**: The Backend reads the files generated in the workspace to score the solution.
 
 ## 4. Key Directories & Files
@@ -64,12 +64,15 @@ graph TD
 *   `evaluate.ts`: Logic to check player solutions against test cases.
 *   `db/schema.ts`: Drizzle ORM schema definitions (Users, Prompts, Duels, Leaderboard).
 
-### Claude Code Server (`/claude-code-server`)
-*   `index.js`: The core logic. 
-    *   Manages `node-pty` instances.
-    *   Handles platform-specific shell spawning (bash vs git-bash).
-    *   Injects prompts into Claude using heredocs.
+### AI Code Server (`/ai-code-server`)
+*   `index.js`: The core logic.
+    *   Manages WebSocket sessions per player.
+    *   Routes prompts to the selected AI provider (Anthropic/OpenAI/Google).
+    *   Writes generated code to player workspaces.
     *   Streams output to spectators.
+*   `providers/`: Multi-provider AI integration layer.
+    *   `ProviderFactory.js`: Factory pattern for provider instantiation.
+    *   `AnthropicProvider.js`, `OpenAIProvider.js`, `GoogleProvider.js`: Provider implementations.
 
 ### Frontend (`/frontend/src`)
 *   `pages/GamePage.tsx`: The main game UI orchestration.
@@ -86,14 +89,8 @@ Each workspace is initialized with:
 *   `CLAUDE.md`: Instructions for Claude on how to behave (e.g., "Only implement what is asked").
 *   `index.js`: A starter file.
 
-### Interacting with Claude
-The unique mechanism for "automating" the interactive Claude CLI is via standard input injection:
-```bash
-claude --dangerously-skip-permissions --print << 'PROMPT_EOF'
-[User Prompt Here]
-PROMPT_EOF
-```
-This forces Claude to execute the prompt and stream the result back without waiting for manual confirmation (dangerously-skip-permissions).
+### Interacting with AI Providers
+The AI Code Server uses a provider abstraction layer to send prompts to the selected AI provider API. Each provider (Anthropic Claude, OpenAI GPT, Google Gemini) implements a common interface for code generation. The server sends the player's prompt along with challenge context as a system prompt, receives generated code, and writes it to the player's workspace.
 
 ### Scoring
 *   **Base Score**: Calculated by the backend (`evaluate.ts`) based on:
@@ -117,7 +114,7 @@ This forces Claude to execute the prompt and stream the result back without wait
 *   **Mac/Linux**: `./scripts/start-all.sh`
 
 **Environment Variables**:
-*   `ANTHROPIC_API_KEY`: Required for Claude Code to function.
+*   `ANTHROPIC_API_KEY`: Required for Anthropic provider (at least one provider API key needed).
 
 ## 7. Synchronization & Networking
 
@@ -136,14 +133,14 @@ Prompt Duel uses a **Three-Layer Synchronization details** architecture to manag
 *   **Mechanism**: The application leverages `GameContext` to subscribe to Supabase channels. Crucial game state changes (like passing the turn after a prompt is processed) are synced via system messages in the database, which Supabase pushes to all clients.
     *   *Why?* This ensures a persistent log of the game state and allows spectators to "replay" the logic by reading the message history.
 
-### 3. Terminal I/O (Claude Code Server WebSocket)
+### 3. AI Code Generation (AI Code Server WebSocket)
 **Endpoint**: `ws://localhost:3001`
-**Role**: Manages "Real-time" terminal streaming.
-*   **Players**: Connect directly to their specific PTY session (`start-session`).
-    *   Input: Frontend -> CCS -> PTY (`stdin`)
-    *   Output: PTY (`stdout`) -> CCS -> Frontend
-*   **Spectators**: Connect to CCS via `spectate-session`.
-    *   The CCS broadcasts the raw terminal output from active PTY sessions to any connected spectators.
+**Role**: Manages real-time AI code generation.
+*   **Players**: Connect to start a session (`start-session`) with their selected AI provider.
+    *   Input: Frontend -> ACS -> AI Provider API
+    *   Output: AI Provider API -> ACS -> Frontend
+*   **Spectators**: Connect to ACS via `spectate-session`.
+    *   The ACS broadcasts generation output from active sessions to any connected spectators.
 
 ### 4. Connection Lifecycle (Server Cleanup)
 To prevent memory leaks and zombie rooms, the Backend runs a background job every **5 minutes**:
@@ -276,7 +273,7 @@ sequenceDiagram
 ### 9. Sync "Processing" State (Turn Integrity)
 To prevent prompt flooding or turn-skipping, the system enforces a strict "Processing" lock.
 
-*   **Trigger**: `processing-started` event from Claude Code Server.
+*   **Trigger**: `processing-started` event from AI Code Server.
 *   **Action**: 
     1.  Sets `isProcessing = true` locally.
     2.  Broadcasts `Claude is working...` via Supabase.
