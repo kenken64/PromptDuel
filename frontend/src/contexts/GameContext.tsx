@@ -196,9 +196,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // NOTE: Don't sync "Claude is working on" messages - only the local WebSocket
-        // should set processing to true. Supabase sync can set it to false (see below).
-        // This prevents race conditions where messages arrive out of order.
+        // Sync "Claude is working" messages to set processing state on both browsers
+        // This ensures both players see when the opponent is processing
+        if (text.includes('Claude is working on')) {
+          console.log('[Supabase Sync] Claude is working message detected');
+          // Determine which player is processing from the message
+          if (text.includes(player1NameRef.current)) {
+            console.log('[Supabase Sync] Setting player1Processing = true');
+            setPlayer1Processing(true);
+            player1SubmittingRef.current = true;
+          } else if (text.includes(player2NameRef.current)) {
+            console.log('[Supabase Sync] Setting player2Processing = true');
+            setPlayer2Processing(true);
+            player2SubmittingRef.current = true;
+          }
+        }
 
         // Sync processing complete from "Claude finished" messages
         if (text.includes('Claude finished processing')) {
@@ -206,17 +218,54 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           // Reset both processing states to be safe
           setPlayer1Processing(false);
           setPlayer2Processing(false);
+          // Also reset submitting refs
+          player1SubmittingRef.current = false;
+          player2SubmittingRef.current = false;
         }
 
-        // Handle GAME_END message - host ended the duel
+        // Handle GAME_END message - host ended the duel or both players ended
         if (text.startsWith('GAME_END')) {
           console.log('[Supabase Sync] Game end detected - stopping game and triggering navigation');
           gameEndedRef.current = true;
           setIsActive(false);
           setPlayer1Processing(false);
           setPlayer2Processing(false);
-          // Signal that we should navigate to results (for player 2 who receives this via Supabase)
+          // Signal that we should navigate to results
           setShouldNavigateToResults(true);
+        }
+
+        // Handle RESULTS message - save results to localStorage so both players can access them
+        if (text.startsWith('RESULTS:')) {
+          console.log('[Supabase Sync] Results received');
+          try {
+            const resultsJson = text.substring('RESULTS:'.length);
+            const gameResults = JSON.parse(resultsJson);
+            console.log('[Supabase Sync] Saving results to localStorage:', gameResults);
+            localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
+            // Also update local state
+            if (gameResults.evaluationResults) {
+              setEvaluationResults(gameResults.evaluationResults);
+            }
+            if (gameResults.player1) {
+              setPlayer1((prev) => ({
+                ...prev,
+                score: gameResults.player1.score,
+                promptsUsed: gameResults.player1.promptsUsed,
+              }));
+            }
+            if (gameResults.player2) {
+              setPlayer2((prev) => ({
+                ...prev,
+                score: gameResults.player2.score,
+                promptsUsed: gameResults.player2.promptsUsed,
+              }));
+            }
+            if (gameResults.winner) {
+              setWinner(gameResults.winner);
+            }
+          } catch (e) {
+            console.error('[Supabase Sync] Failed to parse results:', e);
+          }
         }
 
         // Sync score updates from SCORE_UPDATE messages
@@ -274,6 +323,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             // Also reset isReady for both players when game starts
             setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
             setPlayer2((prev) => ({ ...prev, isReady: false, prompt: '' }));
+
+            // Parse start timestamp and total seconds from message for timer sync
+            // Format: [START:timestamp:totalSeconds]
+            const startMatch = message.text.match(/\[START:(\d+):(\d+)\]/);
+            if (startMatch) {
+              const startTime = parseInt(startMatch[1], 10);
+              const totalSeconds = parseInt(startMatch[2], 10);
+              gameStartTimeRef.current = startTime;
+
+              // Calculate remaining time based on elapsed time (for Player 2 who receives via Supabase)
+              const elapsed = Math.floor((Date.now() - startTime) / 1000);
+              const remaining = Math.max(0, totalSeconds - elapsed);
+              console.log(`[Timer Sync] startTime=${startTime}, totalSeconds=${totalSeconds}, elapsed=${elapsed}, remaining=${remaining}`);
+              setTimeLeft(remaining);
+            }
           } else {
             console.log('Ignoring "begins" message - game has already ended');
           }
@@ -482,6 +546,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               console.log(`Player ${playerNum} processing complete`);
               console.log(`[processing-complete] msg:`, msg);
               setProcessing(false);
+              // Reset the submitting ref
+              if (playerNum === 1) {
+                player1SubmittingRef.current = false;
+              } else {
+                player2SubmittingRef.current = false;
+              }
               setConsole((prev) => [...prev, `[System] Claude finished processing`]);
               // Broadcast completion to both players
               const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
@@ -572,16 +642,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Ref to store game start timestamp for timer sync
+  const gameStartTimeRef = useRef<number>(0);
+
   const startDuel = useCallback(() => {
     // Reset game ended flag for new game
     gameEndedRef.current = false;
     setIsActive(true);
-    setTimeLeft(gameTimeoutMinutes * 60);
+    const totalSeconds = gameTimeoutMinutes * 60;
+    setTimeLeft(totalSeconds);
     setPlayer1((prev) => ({ ...prev, isReady: false, prompt: '' }));
     setPlayer2((prev) => ({ ...prev, isReady: false, prompt: '' }));
+
+    // Store game start time for sync
+    const startTime = Date.now();
+    gameStartTimeRef.current = startTime;
+
+    // Include start timestamp and timeout in the message for spectator sync
     addGameMessage(
       'Judge Alpha',
-      `Challenge ${selectedChallenge} begins! You have ${gameTimeoutMinutes} minutes. Good luck!`,
+      `Challenge ${selectedChallenge} begins! You have ${gameTimeoutMinutes} minutes. Good luck! [START:${startTime}:${totalSeconds}]`,
       'judge'
     );
   }, [gameTimeoutMinutes, selectedChallenge, addGameMessage]);
@@ -654,6 +734,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         };
         console.log('Saving game results to localStorage:', gameResults);
         localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
+
+        // Broadcast results via Supabase so both players can save them
+        // Using a compact format to avoid message size issues
+        addGameMessage(
+          'System',
+          `RESULTS:${JSON.stringify(gameResults)}`,
+          'system'
+        );
 
         // Save both players to leaderboard
         try {
@@ -735,12 +823,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     await runEvaluation(isForfeit);
   }, [addGameMessage, runEvaluation, player2.hasEnded]);
 
+  // Refs to track if a submission is in progress (prevents double-submit)
+  const player1SubmittingRef = useRef<boolean>(false);
+  const player2SubmittingRef = useRef<boolean>(false);
+
   const handleSubmit = useCallback(
     (player: Player) => {
       if (player === 'player1' && player1.prompt.trim()) {
+        // Prevent double-submit: check if already submitting or processing
+        if (player1SubmittingRef.current || player1Processing) {
+          console.log(`[handleSubmit] Player1 already submitting or processing, ignoring duplicate submit`);
+          return;
+        }
+        player1SubmittingRef.current = true;
+
         const prompt = player1.prompt.trim();
         const newPromptsUsed = player1.promptsUsed + 1;
         console.log(`[handleSubmit] Player1 submitting prompt #${newPromptsUsed}`);
+
+        // Set processing FIRST before any other state updates
+        setPlayer1Processing(true);
 
         setPlayer1((prev) => {
           console.log(`[handleSubmit] Player1 promptsUsed: ${prev.promptsUsed} -> ${prev.promptsUsed + 1}`);
@@ -748,17 +850,29 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
         addGameMessage(player1.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player1');
 
-        setPlayer1Processing(true);
         sendPlayerInput(1, prompt + '\n');
 
         // Timeout fallback - turn switches after processing completes
-        setTimeout(() => setPlayer1Processing(false), 120000);
+        setTimeout(() => {
+          setPlayer1Processing(false);
+          player1SubmittingRef.current = false;
+        }, 120000);
 
         // Don't switch turn here - wait for processing to complete
       } else if (player === 'player2' && player2.prompt.trim()) {
+        // Prevent double-submit: check if already submitting or processing
+        if (player2SubmittingRef.current || player2Processing) {
+          console.log(`[handleSubmit] Player2 already submitting or processing, ignoring duplicate submit`);
+          return;
+        }
+        player2SubmittingRef.current = true;
+
         const prompt = player2.prompt.trim();
         const newPromptsUsed = player2.promptsUsed + 1;
         console.log(`[handleSubmit] Player2 submitting prompt #${newPromptsUsed}`);
+
+        // Set processing FIRST before any other state updates
+        setPlayer2Processing(true);
 
         setPlayer2((prev) => {
           console.log(`[handleSubmit] Player2 promptsUsed: ${prev.promptsUsed} -> ${prev.promptsUsed + 1}`);
@@ -766,23 +880,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
         addGameMessage(player2.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player2');
 
-        setPlayer2Processing(true);
         sendPlayerInput(2, prompt + '\n');
 
         // Timeout fallback - turn switches after processing completes
-        setTimeout(() => setPlayer2Processing(false), 120000);
+        setTimeout(() => {
+          setPlayer2Processing(false);
+          player2SubmittingRef.current = false;
+        }, 120000);
 
         // Don't switch turn here - wait for processing to complete
       } else {
         console.log(`[handleSubmit] No prompt to submit for ${player}. player1.prompt="${player1.prompt}", player2.prompt="${player2.prompt}"`);
       }
     },
-    [player1, player2, addGameMessage, sendPlayerInput]
+    [player1, player2, player1Processing, player2Processing, addGameMessage, sendPlayerInput]
   );
 
   const handleBothEnded = useCallback(async () => {
+    console.log('[handleBothEnded] Both players have ended their prompts');
+    gameEndedRef.current = true;
     setIsActive(false);
+
+    // Broadcast GAME_END to notify all players (including Player 1 who ended first)
+    addGameMessage('System', 'GAME_END Both players have ended their prompts!', 'system');
     addGameMessage('Judge Alpha', 'Both players have ended! Evaluating workspaces...', 'judge');
+
     await runEvaluation();
   }, [addGameMessage, runEvaluation]);
 
@@ -858,20 +980,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPlayer1Processing(false);
     setPlayer2Processing(false);
     setShouldNavigateToResults(false);
+    player1SubmittingRef.current = false;
+    player2SubmittingRef.current = false;
+    gameStartTimeRef.current = 0;
   }, [disconnectPlayer, clearSupabaseMessages, unsubscribeFromGame]);
 
-  // Timer countdown
+  // Timer countdown (syncs with game start time to prevent drift)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft((time) => time - 1);
+        // If we have a game start time, calculate remaining based on elapsed
+        if (gameStartTimeRef.current > 0) {
+          const elapsed = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+          const remaining = Math.max(0, (gameTimeoutMinutes * 60) - elapsed);
+          setTimeLeft(remaining);
+        } else {
+          // Fallback to local countdown
+          setTimeLeft((time) => Math.max(0, time - 1));
+        }
       }, 1000);
     } else if (timeLeft === 0 && isActive) {
       handleTimeUp();
     }
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, handleTimeUp]);
+  }, [isActive, timeLeft, handleTimeUp, gameTimeoutMinutes]);
 
   // Cleanup WebSocket connections on unmount
   useEffect(() => {
