@@ -9,11 +9,11 @@ Write-Host "========================================="
 Write-Host "Restarting Prompt Duel Application"
 Write-Host "========================================="
 
-# Check Claude Code login status
+# Check AI Provider login status
 Write-Host ""
-Write-Host "Checking Claude Code authentication..."
+Write-Host "Checking AI Provider authentication..."
 $ClaudeCreds = Join-Path $env:USERPROFILE ".claude\.credentials.json"
-$ClaudeServerEnv = Join-Path $ScriptDir "..\claude-code-server\.env"
+$ClaudeServerEnv = Join-Path $ScriptDir "..\ai-code-server\.env"
 $hasApiKey = $false
 
 # Check for API key in .env file
@@ -25,14 +25,14 @@ if (Test-Path $ClaudeServerEnv) {
 }
 
 if (Test-Path $ClaudeCreds) {
-    Write-Host "Claude Code: LOGGED IN" -ForegroundColor Green
+    Write-Host "AI Provider: LOGGED IN" -ForegroundColor Green
     Write-Host "  Credentials found at: $ClaudeCreds"
 } elseif ($hasApiKey) {
-    Write-Host "Claude Code: API KEY CONFIGURED" -ForegroundColor Green
-    Write-Host "  Using ANTHROPIC_API_KEY from claude-code-server/.env"
+    Write-Host "AI Provider: API KEY CONFIGURED" -ForegroundColor Green
+    Write-Host "  Using ANTHROPIC_API_KEY from ai-code-server/.env"
 } else {
-    Write-Host "Claude Code: NOT LOGGED IN" -ForegroundColor Red
-    Write-Host "  Run 'claude login' or set ANTHROPIC_API_KEY in claude-code-server/.env"
+    Write-Host "AI Provider: NOT LOGGED IN" -ForegroundColor Red
+    Write-Host "  Run 'claude login' or set ANTHROPIC_API_KEY in ai-code-server/.env"
     Write-Host ""
     $choice = Read-Host "Continue anyway? (y/N)"
     if ($choice -ne "y" -and $choice -ne "Y") {
@@ -83,11 +83,11 @@ Write-Host ""
 # Wait a moment for backend to initialize
 Start-Sleep -Seconds 2
 
-# Start Claude Code Server
+# Start AI Code Server
 Write-Host ""
-& "$ScriptDir\start-claude-code-server.ps1"
+& "$ScriptDir\start-ai-code-server.ps1"
 
-# Wait a moment for Claude Code Server to initialize
+# Wait a moment for AI Code Server to initialize
 Start-Sleep -Seconds 1
 
 # Start frontend
@@ -99,7 +99,7 @@ Write-Host "========================================="
 Write-Host "All services started!"
 Write-Host "========================================="
 Write-Host "Backend:            http://localhost:3000"
-Write-Host "Claude Code Server: ws://localhost:3001"
+Write-Host "AI Code Server: ws://localhost:3001"
 Write-Host "Frontend:           http://localhost:5173"
 Write-Host ""
 Write-Host "To stop all services, run: .\scripts\stop-all.ps1"

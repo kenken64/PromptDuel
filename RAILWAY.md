@@ -8,7 +8,7 @@ Deploy Prompt Duel to Railway with 3 services.
 |---|---------|-----------|------|--------|-------------|
 | 1 | Frontend | `frontend/` | 80 | No | React app served via nginx |
 | 2 | Backend | `backend/` | 3000 | Yes | Elysia API with SQLite database |
-| 3 | Claude Code Server | `claude-code-server/` | 3001 | Yes | WebSocket PTY server for Claude CLI |
+| 3 | AI Code Server | `ai-code-server/` | 3001 | Yes | Multi-provider AI code generation server |
 
 ---
 
@@ -51,7 +51,7 @@ NODE_ENV=production
 
 ---
 
-### Step 3: Deploy Claude Code Server (Service 2/3)
+### Step 3: Deploy AI Code Server (Service 2/3)
 
 1. Click **"New"** → **"GitHub Repo"**
 2. Select the same repository
@@ -59,7 +59,7 @@ NODE_ENV=production
 
 | Setting | Value |
 |---------|-------|
-| Root Directory | `claude-code-server` |
+| Root Directory | `ai-code-server` |
 | Builder | Dockerfile |
 
 4. Go to **Variables** tab and add:
@@ -116,7 +116,7 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 | `DATABASE_URL` | `/app/data/sqlite.db` | Yes |
 | `NODE_ENV` | `production` | No |
 
-### Claude Code Server
+### AI Code Server
 | Variable | Value | Required |
 |----------|-------|----------|
 | `ANTHROPIC_API_KEY` | `sk-ant-api03-xxx` | **Yes** |
@@ -127,7 +127,7 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 | Variable | Value | Required |
 |----------|-------|----------|
 | `VITE_API_URL` | `https://your-backend.up.railway.app` | Yes |
-| `VITE_WS_URL` | `wss://your-claude-code-server.up.railway.app` | Yes |
+| `VITE_WS_URL` | `wss://your-ai-code-server.up.railway.app` | Yes |
 
 ---
 
@@ -136,7 +136,7 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 | Service | Mount Path | Purpose |
 |---------|------------|---------|
 | Backend | `/app/data` | SQLite database persistence |
-| Claude Code Server | `/app/workspaces` | Player workspace files |
+| AI Code Server | `/app/workspaces` | Player workspace files |
 
 > **Warning**: Without volumes, data is lost on every deploy!
 
@@ -150,8 +150,8 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌─────────────┐    ┌─────────────┐    ┌──────────────────┐ │
-│  │  Frontend   │    │   Backend   │    │ Claude Code      │ │
-│  │  (nginx)    │───▶│  (Elysia)   │    │ Server (node-pty)│ │
+│  │  Frontend   │    │   Backend   │    │ AI Code      │ │
+│  │  (nginx)    │───▶│  (Elysia)   │    │ Server (AI API) │ │
 │  │  Port 80    │    │  Port 3000  │    │ Port 3001        │ │
 │  └─────────────┘    └──────┬──────┘    └────────┬─────────┘ │
 │                            │                     │           │
@@ -169,7 +169,7 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 ## Post-Deployment Checklist
 
 - [ ] Backend is running (check `/health` endpoint)
-- [ ] Claude Code Server is running (check logs)
+- [ ] AI Code Server is running (check logs)
 - [ ] Frontend loads without errors
 - [ ] WebSocket connection works (check browser console)
 - [ ] Database persists after redeploy
@@ -181,12 +181,12 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 
 ### "Connection failed" in frontend
 - Verify `VITE_API_URL` points to your backend URL
-- Verify `VITE_WS_URL` points to your claude-code-server URL
+- Verify `VITE_WS_URL` points to your ai-code-server URL
 - Ensure you're using `https://` and `wss://` (not `http://` or `ws://`)
 
-### Claude Code not responding
+### AI Code not responding
 - Check that `ANTHROPIC_API_KEY` is set correctly
-- View claude-code-server logs in Railway dashboard
+- View ai-code-server logs in Railway dashboard
 
 ### Database resets on deploy
 - Ensure volume is mounted at `/app/data`
@@ -195,7 +195,7 @@ VITE_WS_URL=wss://claude-code-xxx.up.railway.app
 ### WebSocket connection fails
 - Railway supports WebSockets by default
 - Ensure you're using `wss://` protocol
-- Check claude-code-server logs for errors
+- Check ai-code-server logs for errors
 
 ---
 
@@ -222,7 +222,7 @@ docker-compose up --build
 
 Railway pricing is usage-based. For this app:
 - **Backend**: Low resource usage (SQLite is lightweight)
-- **Claude Code Server**: Moderate usage (spawns PTY processes)
+- **AI Code Server**: Moderate usage (AI API calls)
 - **Frontend**: Minimal (static files served by nginx)
 - **Volumes**: Charged per GB stored
 

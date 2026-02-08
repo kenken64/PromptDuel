@@ -1,6 +1,6 @@
 # Prompt Duel
 
-A competitive prompt engineering game where two players take turns crafting prompts for Claude Code.
+A competitive prompt engineering game where two players battle head-to-head writing prompts for AI code generation.
 
 ## Development Rules
 
@@ -17,7 +17,7 @@ A competitive prompt engineering game where two players take turns crafting prom
 promptduel/
 ├── frontend/          # React + Vite frontend
 ├── backend/           # Elysia/Bun backend with SQLite
-├── claude-code-server/  # WebSocket server for Claude Code PTY sessions
+├── ai-code-server/  # Multi-provider AI code generation WebSocket server
 ├── workspaces/        # Player workspace directories (auto-created)
 └── scripts/           # Start/stop scripts for all services
 ```
@@ -26,7 +26,7 @@ promptduel/
 
 - **Frontend**: React, Vite, TypeScript, NES.css (retro styling), Tailwind CSS
 - **Backend**: Bun, Elysia, Drizzle ORM, SQLite
-- **Claude Code Server**: Node.js, WebSocket (ws), node-pty
+- **AI Code Server**: Node.js, WebSocket (ws), Multi-provider AI API (Anthropic, OpenAI, Google)
 
 ## Services
 
@@ -34,7 +34,7 @@ promptduel/
 |---------|------|-------------|
 | Frontend | 5173 | Vite dev server |
 | Backend | 3000 | Elysia API server |
-| Claude Code Server | 3001 | WebSocket PTY server |
+| AI Code Server | 3001 | Multi-provider AI code generation server |
 
 ## Scripts
 
@@ -68,7 +68,7 @@ bash scripts/stop-all.sh
 - Turn-based gameplay with 20-minute timer
 - Each player gets 7 prompt attempts
 - Players can end their prompts early
-- Real-time Claude Code PTY sessions per player
+- Multi-provider AI code generation (Anthropic, OpenAI, Google)
 - Console output display for each player
 
 ## Database Schema
@@ -83,7 +83,7 @@ bash scripts/stop-all.sh
 ```bash
 cd frontend && bun install
 cd backend && bun install
-cd claude-code-server && npm install
+cd ai-code-server && npm install
 ```
 
 ### Database setup
@@ -96,7 +96,7 @@ cd backend && bun run db:setup
 - `frontend/src/App.tsx` - Main game logic and state
 - `frontend/src/components/LandingPage.tsx` - Challenge selection UI
 - `frontend/src/components/UnifiedPromptArea.tsx` - Prompt input and turn management
-- `claude-code-server/index.js` - PTY WebSocket server
+- `ai-code-server/index.js` - AI code generation WebSocket server
 - `backend/src/db/schema.ts` - Database schema
 
 ## Environment Variables
@@ -105,9 +105,9 @@ Copy `.env.example` to `.env` and configure:
 
 | Variable | Service | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | claude-code-server | Required for Claude CLI auth |
+| `ANTHROPIC_API_KEY` | ai-code-server | Anthropic Claude API key |
 | `DATABASE_URL` | backend | SQLite database path |
-| `WORKSPACES_DIR` | claude-code-server | Player workspace directory |
+| `WORKSPACES_DIR` | ai-code-server | Player workspace directory |
 | `VITE_API_URL` | frontend | Backend API URL |
 | `VITE_WS_URL` | frontend | WebSocket server URL |
 
@@ -130,4 +130,4 @@ See [RAILWAY.md](./RAILWAY.md) for detailed deployment instructions.
 |---------|-----------|--------|
 | Frontend | `frontend/` | No |
 | Backend | `backend/` | `/app/data` |
-| Claude Code Server | `claude-code-server/` | `/app/workspaces`
+| AI Code Server | `ai-code-server/` | `/app/workspaces`

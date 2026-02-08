@@ -1,5 +1,5 @@
 # Stop All Services Script
-# This script stops all services (frontend, claude-code-server, backend)
+# This script stops all services (frontend, ai-code-server, backend)
 
 $ErrorActionPreference = "Stop"
 
@@ -13,9 +13,9 @@ Write-Host "========================================="
 Write-Host ""
 & "$ScriptDir\stop-frontend.ps1"
 
-# Stop Claude Code Server
+# Stop AI Code Server
 Write-Host ""
-& "$ScriptDir\stop-claude-code-server.ps1"
+& "$ScriptDir\stop-ai-code-server.ps1"
 
 # Stop backend
 Write-Host ""

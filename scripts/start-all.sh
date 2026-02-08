@@ -11,15 +11,15 @@ echo "========================================="
 echo "Restarting Prompt Duel Application"
 echo "========================================="
 
-# Check Claude Code login status
+# Check AI Provider login status
 echo ""
-echo "Checking Claude Code authentication..."
+echo "Checking AI Provider authentication..."
 CLAUDE_CREDS="$HOME/.claude/.credentials.json"
 if [ -f "$CLAUDE_CREDS" ]; then
-    echo -e "\033[32m✓ Claude Code: LOGGED IN\033[0m"
+    echo -e "\033[32m✓ AI Provider: LOGGED IN\033[0m"
     echo "  Credentials found at: $CLAUDE_CREDS"
 else
-    echo -e "\033[31m✗ Claude Code: NOT LOGGED IN\033[0m"
+    echo -e "\033[31m✗ AI Provider: NOT LOGGED IN\033[0m"
     echo "  Run 'claude login' to authenticate before starting the game."
     echo ""
     read -p "Continue anyway? (y/N): " choice
@@ -62,11 +62,11 @@ bash "$SCRIPT_DIR/start-backend.sh"
 # Wait a moment for backend to initialize
 sleep 2
 
-# Start Claude Code Server
+# Start AI Code Server
 echo ""
-bash "$SCRIPT_DIR/start-claude-code-server.sh"
+bash "$SCRIPT_DIR/start-ai-code-server.sh"
 
-# Wait a moment for Claude Code Server to initialize
+# Wait a moment for AI Code Server to initialize
 sleep 1
 
 # Start frontend
@@ -78,7 +78,7 @@ echo "========================================="
 echo "All services started!"
 echo "========================================="
 echo "Backend:            http://localhost:3000"
-echo "Claude Code Server: ws://localhost:3001"
+echo "AI Code Server: ws://localhost:3001"
 echo "Frontend:           http://localhost:5173"
 echo ""
 echo "To stop all services, run: ./scripts/stop-all.sh"

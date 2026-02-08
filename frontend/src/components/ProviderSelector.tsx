@@ -1,6 +1,6 @@
 import React from 'react';
 
-// Provider configuration matching claude-code-server
+// Provider configuration matching ai-code-server
 export const PROVIDER_CONFIG = {
   anthropic: {
     name: 'Anthropic',

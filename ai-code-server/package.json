@@ -1,7 +1,7 @@
 {
-  "name": "claude-code-server",
+  "name": "ai-code-server",
   "version": "1.0.0",
-  "description": "WebSocket terminal server for Claude Code integration",
+  "description": "Multi-provider AI code generation WebSocket server",
   "main": "index.js",
   "type": "module",
   "scripts": {

@@ -4,19 +4,19 @@
 
 <h1 align="center">Prompt Duel</h1>
 
-A competitive multiplayer prompt engineering game where two players battle head-to-head to write the best prompts for Claude Code. Each player gets up to 7 prompts to complete a coding challenge - the fewer prompts used with a higher score, the better!
+A competitive multiplayer prompt engineering game where two players battle head-to-head to write the best prompts for AI code generation. Each player gets up to 7 prompts to complete a coding challenge - the fewer prompts used with a higher score, the better!
 
 ## What is Prompt Duel?
 
-Prompt Duel is a real-time multiplayer game that tests your prompt engineering skills. Two players compete simultaneously, each with their own Claude Code terminal session. The goal is to craft effective prompts that instruct Claude to build a working solution to the given challenge.
+Prompt Duel is a real-time multiplayer game that tests your prompt engineering skills. Two players compete simultaneously, each with their own AI code generation session (choose from Anthropic Claude, OpenAI GPT, or Google Gemini). The goal is to craft effective prompts that instruct the AI to build a working solution to the given challenge.
 
 ### How It Works
 
 1. **Register/Login** - Create an account or sign in
 2. **Create or Join Room** - Start a new room or join with a code
 3. **Ready Up** - Both players mark ready, host starts the game
-4. **Take Turns Prompting** - Players alternate submitting prompts to Claude Code
-5. **Watch Claude Work** - See real-time terminal output as Claude builds the solution
+4. **Take Turns Prompting** - Players alternate submitting prompts to the AI
+5. **Watch AI Work** - See real-time terminal output as the AI builds the solution
 6. **Score & Win** - Automated evaluation scores each player's solution
 
 ## Features
@@ -28,7 +28,8 @@ Prompt Duel is a real-time multiplayer game that tests your prompt engineering s
 - **Spectator Mode** - Watch live games without participating
 - **Leaderboard** - Global rankings filtered by challenge
 - **Turn-based Gameplay** - Fair alternating prompt submission
-- **Live Terminal Output** - Watch Claude Code work in real-time
+- **Multi-Provider AI** - Choose from Anthropic Claude, OpenAI GPT, or Google Gemini
+- **Live Terminal Output** - Watch AI generate code in real-time
 - **Automated Scoring** - AI-powered evaluation with detailed breakdown
 - **Sample Prompts** - Learn from example solutions after each game
 - **Retro UI** - NES.css styled interface for that classic gaming feel
@@ -122,7 +123,7 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 | Frontend | React, Vite, TypeScript, NES.css, Tailwind CSS |
 | Backend | Bun, Elysia, Drizzle ORM, SQLite |
 | Real-time | Supabase Realtime, WebSocket |
-| Claude Integration | Node.js, WebSocket (ws), node-pty, Claude Code CLI |
+| AI Code Generation | Node.js, WebSocket (ws), Multi-provider AI API (Anthropic, OpenAI, Google) |
 | Deployment | Docker, Docker Compose, Railway |
 
 ## Architecture
@@ -133,16 +134,17 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌─────────────┐    ┌─────────────┐    ┌──────────────────────┐ │
-│  │  Frontend   │    │   Backend   │    │  Claude Code Server  │ │
-│  │   (React)   │◄──►│  (Elysia)   │    │     (node-pty)       │ │
+│  │  Frontend   │    │   Backend   │    │   AI Code Server     │ │
+│  │   (React)   │◄──►│  (Elysia)   │    │  (Multi-Provider)    │ │
 │  │  Port 5173  │    │  Port 3000  │    │     Port 3001        │ │
 │  └──────┬──────┘    └──────┬──────┘    └──────────┬───────────┘ │
 │         │                  │                       │             │
 │         │           ┌──────▼──────┐                │             │
 │         │           │   SQLite    │                ▼             │
 │         │           │  Database   │       ┌───────────────┐     │
-│         │           └─────────────┘       │  Claude Code  │     │
-│         │                                 │     CLI       │     │
+│         │           └─────────────┘       │ AI Providers  │     │
+│         │                                 │ Anthropic /   │     │
+│         │                                 │ OpenAI/Google │     │
 │         │                  ┌──────────────┴───────────────┘     │
 │         │                  │                                     │
 │         │           ┌──────▼──────┐                              │
@@ -158,7 +160,7 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 
 - [Node.js](https://nodejs.org/) v20+
 - [Bun](https://bun.sh/) (for backend)
-- [Anthropic API Key](https://console.anthropic.com/) (for Claude Code)
+- [Anthropic API Key](https://console.anthropic.com/) (and/or OpenAI, Google API keys)
 - [Supabase Account](https://supabase.com/) (for real-time sync)
 
 ### 1. Clone and Install
@@ -170,7 +172,7 @@ cd promptduel
 # Install dependencies
 cd frontend && npm install && cd ..
 cd backend && bun install && cd ..
-cd claude-code-server && npm install && cd ..
+cd ai-code-server && npm install && cd ..
 ```
 
 ### 2. Configure Environment
@@ -228,7 +230,7 @@ See [RAILWAY.md](./RAILWAY.md) for detailed deployment instructions.
 |---------|-----------|------|
 | Frontend | `frontend/` | 80 |
 | Backend | `backend/` | 3000 |
-| Claude Code Server | `claude-code-server/` | 3001 |
+| AI Code Server | `ai-code-server/` | 3001 |
 
 ## Project Structure
 
@@ -251,8 +253,15 @@ promptduel/
 │   │   ├── evaluate.ts     # Solution evaluation
 │   │   └── index.ts        # Main entry point
 │   └── Dockerfile
-├── claude-code-server/     # WebSocket PTY server
-│   ├── index.js            # PTY session manager
+├── ai-code-server/     # AI Code Generation WebSocket server
+│   ├── index.js            # WebSocket server & session manager
+│   ├── providers/          # Multi-provider AI integrations
+│   │   ├── AnthropicProvider.js  # Anthropic Claude API
+│   │   ├── OpenAIProvider.js     # OpenAI GPT API
+│   │   ├── GoogleProvider.js     # Google Gemini API
+│   │   ├── BaseProvider.js       # Base provider interface
+│   │   ├── ProviderFactory.js    # Provider instantiation factory
+│   │   └── config.js             # Provider configuration
 │   └── Dockerfile
 ├── workspaces/             # Player workspace files (auto-created)
 ├── scripts/                # Start/stop scripts
@@ -266,12 +275,14 @@ promptduel/
 
 | Variable | Service | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | claude-code-server | **Required** - Anthropic API key |
+| `ANTHROPIC_API_KEY` | ai-code-server | Anthropic Claude API key (at least one provider required) |
+| `OPENAI_API_KEY` | ai-code-server | OpenAI GPT API key (optional) |
+| `GOOGLE_AI_API_KEY` | ai-code-server | Google Gemini API key (optional) |
 | `SUPABASE_URL` | frontend | Supabase project URL |
 | `SUPABASE_ANON_KEY` | frontend | Supabase anonymous key |
 | `JWT_SECRET` | backend | Secret for JWT signing |
 | `DATABASE_URL` | backend | SQLite database path |
-| `WORKSPACES_DIR` | claude-code-server | Player workspace directory |
+| `WORKSPACES_DIR` | ai-code-server | Player workspace directory |
 | `VITE_API_URL` | frontend | Backend API URL |
 | `VITE_WS_URL` | frontend | WebSocket server URL |
 

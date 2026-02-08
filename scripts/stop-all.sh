@@ -15,9 +15,9 @@ echo "========================================="
 echo ""
 bash "$SCRIPT_DIR/stop-frontend.sh"
 
-# Stop Claude Code Server
+# Stop AI Code Server
 echo ""
-bash "$SCRIPT_DIR/stop-claude-code-server.sh"
+bash "$SCRIPT_DIR/stop-ai-code-server.sh"
 
 # Stop backend
 echo ""
