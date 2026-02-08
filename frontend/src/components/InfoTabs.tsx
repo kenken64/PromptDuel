@@ -287,7 +287,7 @@ export function InfoTabs({ player1, player2, player1Console, player2Console, cha
                   <li style={{ marginBottom: '0.5rem' }}>Break down the problem into smaller steps</li>
                   <li style={{ marginBottom: '0.5rem' }}>Test your code as you build</li>
                   <li style={{ marginBottom: '0.5rem' }}>
-                    Use clear prompts to guide Claude Code
+                    Use clear prompts to guide the AI
                   </li>
                   <li>Think about edge cases and error handling</li>
                 </ul>

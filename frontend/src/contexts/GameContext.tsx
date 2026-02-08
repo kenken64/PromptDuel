@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { config } from '../config';
+import { MAX_PROMPTS } from '../gameRules';
 import { useAuth } from './AuthContext';
 import { useRoom } from './RoomContext';
 import { useSupabaseGame } from './SupabaseGameContext';
@@ -54,7 +55,7 @@ interface GameContextType {
   setGameTimeoutMinutes: React.Dispatch<React.SetStateAction<number>>;
   addGameMessage: (sender: string, text: string, type: 'player1' | 'player2' | 'judge' | 'system') => void;
   addConsoleLog: (player: Player, log: string) => void;
-  connectPlayer: (playerNum: 1 | 2, playerName: string, challenge: number, roomCode?: string) => void;
+  connectPlayer: (playerNum: 1 | 2, playerName: string, challenge: number, roomCode?: string, provider?: string, model?: string) => void;
   disconnectPlayer: (playerNum: 1 | 2) => void;
   sendPlayerInput: (playerNum: 1 | 2, input: string) => void;
   handleSubmit: (player: Player) => void;
@@ -72,7 +73,7 @@ interface GameContextType {
 const GameContext = createContext<GameContextType | null>(null);
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { room, role, finishRoom } = useRoom();
   const {
     messages: supabaseMessages,
@@ -133,6 +134,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const setCurrentTurnRef = useRef<(turn: Player) => void>(() => {});
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const gameEndedRef = useRef<boolean>(false);
+  // Track which player number this browser controls (set in connectPlayer)
+  // Used to prevent Supabase sync from overriding local WebSocket-driven processing state
+  const localPlayerNumRef = useRef<1 | 2 | null>(null);
+
+  // Track accumulated penalties (e.g. -10 per duplicate prompt) separately
+  // so they survive when evaluatePlayerScore / runEvaluation overwrites scores
+  const player1PenaltyRef = useRef<number>(0);
+  const player2PenaltyRef = useRef<number>(0);
 
   const isSpectator = role === 'spectator';
 
@@ -150,6 +159,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       subscribeToGame(room.code);
     }
   }, [room?.code, subscribeToGame]);
+
+  // Set game timeout from room settings
+  useEffect(() => {
+    if (room?.timerMinutes && room.timerMinutes !== gameTimeoutMinutes) {
+      console.log('Setting game timeout from room:', room.timerMinutes, 'minutes');
+      setGameTimeoutMinutes(room.timerMinutes);
+      setTimeLeft(room.timerMinutes * 60);
+    }
+  }, [room?.timerMinutes]);
 
   // Listen for turn switch messages from Supabase to sync turn state across browsers
   // IMPORTANT: Process ALL new messages, not just the last one, to avoid missing turn switches
@@ -196,31 +214,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // Sync "Claude is working" messages to set processing state on both browsers
-        // This ensures both players see when the opponent is processing
-        if (text.includes('Claude is working on')) {
-          console.log('[Supabase Sync] Claude is working message detected');
-          // Determine which player is processing from the message
-          if (text.includes(player1NameRef.current)) {
-            console.log('[Supabase Sync] Setting player1Processing = true');
+        // Sync "AI is working" messages to set processing state for the REMOTE player only.
+        // The local player's processing state is managed by handleSubmit + WebSocket handler
+        // to prevent race conditions where Supabase messages override local state.
+        if (text.includes('AI is working on')) {
+          console.log('[Supabase Sync] AI is working message detected');
+          if (text.includes(player1NameRef.current) && localPlayerNumRef.current !== 1) {
+            console.log('[Supabase Sync] Setting player1Processing = true (remote sync)');
             setPlayer1Processing(true);
-            player1SubmittingRef.current = true;
-          } else if (text.includes(player2NameRef.current)) {
-            console.log('[Supabase Sync] Setting player2Processing = true');
+          } else if (text.includes(player2NameRef.current) && localPlayerNumRef.current !== 2) {
+            console.log('[Supabase Sync] Setting player2Processing = true (remote sync)');
             setPlayer2Processing(true);
-            player2SubmittingRef.current = true;
           }
         }
 
-        // Sync processing complete from "Claude finished" messages
-        if (text.includes('Claude finished processing')) {
-          console.log('[Supabase Sync] Processing complete message detected - resetting ALL processing states');
-          // Reset both processing states to be safe
-          setPlayer1Processing(false);
-          setPlayer2Processing(false);
-          // Also reset submitting refs
-          player1SubmittingRef.current = false;
-          player2SubmittingRef.current = false;
+        // Sync processing complete from "AI finished" messages — REMOTE player only.
+        // The local player's processing is reset by the WebSocket processing-complete handler.
+        if (text.includes('AI finished processing')) {
+          console.log('[Supabase Sync] Processing complete message detected');
+          if (text.includes(player1NameRef.current) && localPlayerNumRef.current !== 1) {
+            console.log('[Supabase Sync] Resetting player1 processing state (remote sync)');
+            setPlayer1Processing(false);
+          } else if (text.includes(player2NameRef.current) && localPlayerNumRef.current !== 2) {
+            console.log('[Supabase Sync] Resetting player2 processing state (remote sync)');
+            setPlayer2Processing(false);
+          }
         }
 
         // Handle GAME_END message - host ended the duel or both players ended
@@ -240,9 +258,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           try {
             const resultsJson = text.substring('RESULTS:'.length);
             const gameResults = JSON.parse(resultsJson);
-            console.log('[Supabase Sync] Saving results to localStorage:', gameResults);
+            console.log('[Supabase Sync] Received results:', gameResults);
+
+            // Merge with existing localStorage results (host has full results, other player gets simplified)
+            const existingResults = localStorage.getItem('promptduel_results');
+            if (existingResults) {
+              try {
+                const existing = JSON.parse(existingResults);
+                // Keep detailed evaluationResults if we already have them
+                if (existing.evaluationResults && !gameResults.evaluationResults) {
+                  gameResults.evaluationResults = existing.evaluationResults;
+                }
+              } catch (e) {
+                // Ignore parse errors from existing results
+              }
+            }
+
             localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
-            // Also update local state
+
+            // Update local state
             if (gameResults.evaluationResults) {
               setEvaluationResults(gameResults.evaluationResults);
             }
@@ -440,25 +474,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const result = await response.json();
 
         if (result.success) {
+          // Subtract accumulated penalties (e.g. from duplicate prompts) from the API score
+          const penalty = playerNum === 1 ? player1PenaltyRef.current : player2PenaltyRef.current;
+          const adjustedScore = result.totalScore - penalty;
+          console.log(`[evaluatePlayerScore] API score=${result.totalScore}, penalty=${penalty}, adjusted=${adjustedScore}`);
+
           if (playerNum === 1) {
-            setPlayer1((prev) => ({ ...prev, score: result.totalScore }));
+            setPlayer1((prev) => ({ ...prev, score: adjustedScore }));
           } else {
-            setPlayer2((prev) => ({ ...prev, score: result.totalScore }));
+            setPlayer2((prev) => ({ ...prev, score: adjustedScore }));
           }
 
           const setConsole = playerNum === 1 ? setPlayer1Console : setPlayer2Console;
           setConsole((prev) => [
             ...prev,
-            `[Score] ${playerName}: ${result.totalScore}/${result.maxScore} (${result.percentage}%) - Grade: ${result.grade}`,
+            `[Score] ${playerName}: ${adjustedScore}/${result.maxScore}${penalty > 0 ? ` (includes -${penalty} penalty)` : ''} - Grade: ${result.grade}`,
           ]);
 
           // Broadcast score update via Supabase so both players see the score
           const playerKey = playerNum === 1 ? 'player1' : 'player2';
           const promptsUsed = playerNum === 1 ? player1PromptsUsedRef.current : player2PromptsUsedRef.current;
-          console.log(`[evaluatePlayerScore] Broadcasting score: ${playerKey}, score=${result.totalScore}, promptsUsed=${promptsUsed}`);
+          console.log(`[evaluatePlayerScore] Broadcasting score: ${playerKey}, score=${adjustedScore}, promptsUsed=${promptsUsed}`);
           addGameMessageRef.current(
             'System',
-            `SCORE_UPDATE:${playerKey}:${result.totalScore}:${promptsUsed}`,
+            `SCORE_UPDATE:${playerKey}:${adjustedScore}:${promptsUsed}`,
             'system'
           );
         }
@@ -474,13 +513,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [evaluatePlayerScore]);
 
   const connectPlayer = useCallback(
-    (playerNum: 1 | 2, playerName: string, challenge: number, roomCode?: string) => {
+    (playerNum: 1 | 2, playerName: string, challenge: number, roomCode?: string, provider?: string, model?: string) => {
       const wsRef = playerNum === 1 ? player1WsRef : player2WsRef;
       const setConnected = playerNum === 1 ? setPlayer1Connected : setPlayer2Connected;
       const setConsole = playerNum === 1 ? setPlayer1Console : setPlayer2Console;
       const setProcessing = playerNum === 1 ? setPlayer1Processing : setPlayer2Processing;
 
+      // Track which player this browser controls
+      localPlayerNumRef.current = playerNum;
+
       console.log(`[connectPlayer] Player ${playerNum} connecting to room ${roomCode}`);
+      console.log(`[connectPlayer] Provider: ${provider}, Model: ${model}`);
       console.log(`[connectPlayer] Current room: ${currentRoomCodeRef.current}`);
       console.log(`[connectPlayer] WebSocket exists: ${!!wsRef.current}, readyState: ${wsRef.current?.readyState}`);
 
@@ -511,7 +554,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         ws.onopen = () => {
           console.log(`Player ${playerNum} (${playerName}) WebSocket connected`);
           setConnected(true);
-          setConsole((prev) => [...prev, `[System] Connected to Claude Code Server`]);
+          setConsole((prev) => [...prev, `[System] Connected to AI Server (${provider || 'anthropic'})`]);
 
           ws.send(
             JSON.stringify({
@@ -519,6 +562,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               playerName,
               challenge,
               roomCode, // Pass roomCode to enable spectator broadcasting
+              provider: provider || 'anthropic',
+              model: model || undefined,
               cols: 120,
               rows: 30,
             })
@@ -541,7 +586,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               setProcessing(true);
               // Broadcast to both players via Supabase
               const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
-              addGameMessageRef.current('System', `Claude is working on ${pName}'s prompt...`, 'system');
+              addGameMessageRef.current('System', `AI is working on ${pName}'s prompt...`, 'system');
             } else if (msg.type === 'processing-complete') {
               console.log(`Player ${playerNum} processing complete`);
               console.log(`[processing-complete] msg:`, msg);
@@ -552,10 +597,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               } else {
                 player2SubmittingRef.current = false;
               }
-              setConsole((prev) => [...prev, `[System] Claude finished processing`]);
+              setConsole((prev) => [...prev, `[System] AI finished processing`]);
               // Broadcast completion to both players
               const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
-              addGameMessageRef.current('System', `Claude finished processing ${pName}'s prompt`, 'system');
+              addGameMessageRef.current('System', `AI finished processing ${pName}'s prompt`, 'system');
 
               console.log(`[processing-complete] playerName=${msg.playerName}, challenge=${msg.challenge}`);
               if (msg.playerName && msg.challenge) {
@@ -566,21 +611,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               }
 
               // Switch turn to the other player after processing completes
-              console.log(`[processing-complete] Checking turn switch: playerNum=${playerNum}, player2HasEnded=${player2HasEndedRef.current}, player1HasEnded=${player1HasEndedRef.current}`);
-              if (playerNum === 1 && !player2HasEndedRef.current) {
-                console.log(`[processing-complete] Switching turn to player2 (${player2NameRef.current})`);
-                setCurrentTurnRef.current('player2');
-                // Include TURN:player2 for reliable syncing
-                addGameMessageRef.current('System', `TURN:player2 It's now ${player2NameRef.current}'s turn!`, 'system');
-                console.log(`[processing-complete] Turn switch message sent`);
-              } else if (playerNum === 2 && !player1HasEndedRef.current) {
-                console.log(`[processing-complete] Switching turn to player1 (${player1NameRef.current})`);
-                setCurrentTurnRef.current('player1');
-                // Include TURN:player1 for reliable syncing
-                addGameMessageRef.current('System', `TURN:player1 It's now ${player1NameRef.current}'s turn!`, 'system');
-                console.log(`[processing-complete] Turn switch message sent`);
+              // A player can receive turns only if they haven't ended AND still have prompts left
+              console.log(`[processing-complete] Checking turn switch: playerNum=${playerNum}, p1HasEnded=${player1HasEndedRef.current}, p2HasEnded=${player2HasEndedRef.current}, p1Prompts=${player1PromptsUsedRef.current}, p2Prompts=${player2PromptsUsedRef.current}`);
+              const otherCanPlay = playerNum === 1
+                ? (!player2HasEndedRef.current && player2PromptsUsedRef.current < MAX_PROMPTS)
+                : (!player1HasEndedRef.current && player1PromptsUsedRef.current < MAX_PROMPTS);
+
+              if (otherCanPlay) {
+                if (playerNum === 1) {
+                  console.log(`[processing-complete] Switching turn to player2 (${player2NameRef.current})`);
+                  setCurrentTurnRef.current('player2');
+                  addGameMessageRef.current('System', `TURN:player2 It's now ${player2NameRef.current}'s turn!`, 'system');
+                } else {
+                  console.log(`[processing-complete] Switching turn to player1 (${player1NameRef.current})`);
+                  setCurrentTurnRef.current('player1');
+                  addGameMessageRef.current('System', `TURN:player1 It's now ${player1NameRef.current}'s turn!`, 'system');
+                }
               } else {
-                console.log(`[processing-complete] Not switching turn`);
+                // Other player can't play — check if both are effectively done
+                const p1Done = player1HasEndedRef.current || player1PromptsUsedRef.current >= MAX_PROMPTS;
+                const p2Done = player2HasEndedRef.current || player2PromptsUsedRef.current >= MAX_PROMPTS;
+                console.log(`[processing-complete] Not switching turn. p1Done=${p1Done}, p2Done=${p2Done}`);
+                if (p1Done && p2Done) {
+                  console.log('[processing-complete] Both players are done — auto-ending game');
+                  handleBothEndedRef.current();
+                }
               }
             } else if (msg.type === 'exit') {
               setConsole((prev) => [...prev, `[System] Session exited with code: ${msg.exitCode}`]);
@@ -683,8 +738,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       if (results.success) {
         setEvaluationResults(results);
-        setPlayer1((prev) => ({ ...prev, score: results.player1.totalScore }));
-        setPlayer2((prev) => ({ ...prev, score: results.player2.totalScore }));
+
+        // Fetch penalties from backend (source of truth, survives page refresh)
+        let p1Penalty = player1PenaltyRef.current;
+        let p2Penalty = player2PenaltyRef.current;
+        const roomCode = room?.code || currentRoomCodeRef.current;
+        if (roomCode && token) {
+          try {
+            const penaltyRes = await fetch(`${config.apiUrl}/rooms/${roomCode}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const penaltyData = await penaltyRes.json();
+            if (penaltyData.success && penaltyData.room) {
+              const dbP1 = penaltyData.room.player1Penalty || 0;
+              const dbP2 = penaltyData.room.player2Penalty || 0;
+              // Use whichever is higher (backend or local ref) to avoid missing penalties
+              p1Penalty = Math.max(p1Penalty, dbP1);
+              p2Penalty = Math.max(p2Penalty, dbP2);
+              console.log(`[runEvaluation] Penalties from DB: p1=${dbP1}, p2=${dbP2}. Using max: p1=${p1Penalty}, p2=${p2Penalty}`);
+            }
+          } catch (err) {
+            console.error('[runEvaluation] Failed to fetch penalties from backend, using local refs:', err);
+          }
+        }
+
+        const p1AdjustedScore = results.player1.totalScore - p1Penalty;
+        const p2AdjustedScore = results.player2.totalScore - p2Penalty;
+        console.log(`[runEvaluation] Penalties: p1=${p1Penalty}, p2=${p2Penalty}. Adjusted: p1=${p1AdjustedScore}, p2=${p2AdjustedScore}`);
+
+        setPlayer1((prev) => ({ ...prev, score: p1AdjustedScore }));
+        setPlayer2((prev) => ({ ...prev, score: p2AdjustedScore }));
 
         let evalWinner: 'player1' | 'player2' | null;
         let winnerReason = '';
@@ -694,10 +777,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           evalWinner = 'player2';
           winnerReason = ' by forfeit (host ended duel early)';
         } else {
-          // Normal evaluation - compare final scores
+          // Normal evaluation - compare final scores (with penalties applied)
           const { getFinalScore } = await import('../gameRules');
-          const p1Final = getFinalScore(results.player1.totalScore, player1.promptsUsed);
-          const p2Final = getFinalScore(results.player2.totalScore, player2.promptsUsed);
+          const p1Final = getFinalScore(p1AdjustedScore, player1.promptsUsed);
+          const p2Final = getFinalScore(p2AdjustedScore, player2.promptsUsed);
           evalWinner =
             p1Final > p2Final ? ('player1' as const) : p2Final > p1Final ? ('player2' as const) : null;
         }
@@ -715,31 +798,72 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           'judge'
         );
 
-        // Save results to localStorage for the Results page to read
+        // roomCode already resolved above for penalty fetch
+        console.log('[runEvaluation] Room code resolution:', { roomFromContext: room?.code, roomFromRef: currentRoomCodeRef.current, resolved: roomCode });
+
+        // Save full results to localStorage for the Results page to read
         const gameResults = {
           player1: {
             name: player1.name,
-            score: results.player1.totalScore,
+            score: p1AdjustedScore,
             promptsUsed: player1.promptsUsed,
           },
           player2: {
             name: player2.name,
-            score: results.player2.totalScore,
+            score: p2AdjustedScore,
             promptsUsed: player2.promptsUsed,
           },
           winner: evalWinner,
           evaluationResults: results,
           challenge: selectedChallenge,
-          roomCode: room?.code,
+          roomCode: roomCode,
         };
         console.log('Saving game results to localStorage:', gameResults);
         localStorage.setItem('promptduel_results', JSON.stringify(gameResults));
 
-        // Broadcast results via Supabase so both players can save them
-        // Using a compact format to avoid message size issues
+        // Save full results to backend database so all players/spectators can access
+        console.log('[runEvaluation] Checking save conditions:', { roomCode, hasToken: !!token, roomFromContext: room?.code, roomFromRef: currentRoomCodeRef.current });
+        if (roomCode && token) {
+          try {
+            console.log('Saving game results to backend...', { roomCode });
+            const saveResponse = await fetch(`${config.apiUrl}/rooms/${roomCode}/results`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                evaluationResults: results,
+                player1Score: p1AdjustedScore,
+                player2Score: p2AdjustedScore,
+                player1PromptsUsed: player1.promptsUsed,
+                player2PromptsUsed: player2.promptsUsed,
+                winnerId: evalWinner === 'player1' ? room?.player1?.id : evalWinner === 'player2' ? room?.player2?.id : null,
+              }),
+            });
+            const saveResult = await saveResponse.json();
+            console.log('Game results save response:', saveResult);
+            if (!saveResult.success) {
+              console.error('Backend rejected save:', saveResult.error);
+            }
+          } catch (backendError) {
+            console.error('Failed to save results to backend:', backendError);
+          }
+        } else {
+          console.error('[runEvaluation] Cannot save to backend - missing room code or token:', { roomCode, hasToken: !!token, roomFromContext: room?.code, roomFromRef: currentRoomCodeRef.current });
+        }
+
+        // Broadcast simplified results via Supabase (without detailed evaluationResults to avoid size limits)
+        const simplifiedResults = {
+          player1: { name: player1.name, score: p1AdjustedScore, promptsUsed: player1.promptsUsed },
+          player2: { name: player2.name, score: p2AdjustedScore, promptsUsed: player2.promptsUsed },
+          winner: evalWinner,
+          challenge: selectedChallenge,
+          roomCode: roomCode,
+        };
         addGameMessage(
           'System',
-          `RESULTS:${JSON.stringify(gameResults)}`,
+          `RESULTS:${JSON.stringify(simplifiedResults)}`,
           'system'
         );
 
@@ -761,9 +885,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             });
           };
 
+          // Create adjusted result objects for leaderboard (with penalties applied)
+          const p1LeaderboardResult = { ...results.player1, totalScore: p1AdjustedScore };
+          const p2LeaderboardResult = { ...results.player2, totalScore: p2AdjustedScore };
           await Promise.all([
-            saveToLeaderboard(player1.name, results.player1, player1.promptsUsed),
-            saveToLeaderboard(player2.name, results.player2, player2.promptsUsed),
+            saveToLeaderboard(player1.name, p1LeaderboardResult, player1.promptsUsed),
+            saveToLeaderboard(player2.name, p2LeaderboardResult, player2.promptsUsed),
           ]);
           console.log('Leaderboard entries saved successfully');
         } catch (leaderboardError) {
@@ -772,11 +899,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         // Mark the room as finished and navigate to results
         console.log('Calling finishRoom after successful evaluation');
-        const finishResult = await finishRoom(room?.code);
+        const finishResult = await finishRoom(roomCode || undefined);
         console.log('finishRoom result:', finishResult);
 
         // Navigate to results page directly since useEffect might not trigger
-        const roomCode = room?.code || gameResults.roomCode;
         if (roomCode) {
           console.log('Navigating to results page with code:', roomCode);
           // Small delay to ensure state updates are processed
@@ -794,7 +920,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       addGameMessage('Judge Alpha', 'Could not connect to evaluation server.', 'judge');
     }
     setIsEvaluating(false);
-  }, [player1.name, player1.promptsUsed, player2.name, player2.promptsUsed, selectedChallenge, addGameMessage, finishRoom, room?.code]);
+  }, [player1.name, player1.promptsUsed, player2.name, player2.promptsUsed, selectedChallenge, addGameMessage, finishRoom, room?.code, token]);
 
   const handleTimeUp = useCallback(() => {
     setIsActive(false);
@@ -827,6 +953,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const player1SubmittingRef = useRef<boolean>(false);
   const player2SubmittingRef = useRef<boolean>(false);
 
+  // Track previously submitted prompts to block duplicates (saves API costs)
+  const player1PromptHistoryRef = useRef<Set<string>>(new Set());
+  const player2PromptHistoryRef = useRef<Set<string>>(new Set());
+
+  // Persist penalty to backend SQLite so it survives page refreshes
+  const savePenaltyToBackend = useCallback(async (playerNum: 1 | 2, penalty: number) => {
+    const roomCode = currentRoomCodeRef.current || room?.code;
+    if (!roomCode || !token) return;
+    try {
+      await fetch(`${config.apiUrl}/rooms/${roomCode}/penalty`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ playerNum, penalty }),
+      });
+      console.log(`[savePenaltyToBackend] Player${playerNum} penalty=${penalty} saved to backend`);
+    } catch (err) {
+      console.error('[savePenaltyToBackend] Failed:', err);
+    }
+  }, [room?.code, token]);
+
   const handleSubmit = useCallback(
     (player: Player) => {
       if (player === 'player1' && player1.prompt.trim()) {
@@ -838,7 +984,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         player1SubmittingRef.current = true;
 
         const prompt = player1.prompt.trim();
+        const normalizedPrompt = prompt.toLowerCase().replace(/\s+/g, ' ');
+        const isDuplicate = player1PromptHistoryRef.current.has(normalizedPrompt);
+        player1PromptHistoryRef.current.add(normalizedPrompt);
         const newPromptsUsed = player1.promptsUsed + 1;
+
+        if (isDuplicate) {
+          console.log(`[handleSubmit] Player1 duplicate prompt — wasted turn, -10 penalty`);
+          player1PenaltyRef.current += 10;
+          savePenaltyToBackend(1, player1PenaltyRef.current);
+          const penaltyScore = player1.score - 10;
+          setPlayer1((prev) => ({ ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '', score: prev.score - 10 }));
+          addGameMessage(player1.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player1');
+          addGameMessage('Judge Alpha', `Duplicate prompt detected! ${player1.name} loses 10 marks as penalty. Turn wasted — no AI generation.`, 'judge');
+          // Broadcast score update
+          addGameMessage('System', `SCORE_UPDATE:player1:${penaltyScore}:${newPromptsUsed}`, 'system');
+
+          // Check if both players are effectively done
+          const p1Done = player1.hasEnded || newPromptsUsed >= MAX_PROMPTS;
+          const p2Done = player2HasEndedRef.current || player2PromptsUsedRef.current >= MAX_PROMPTS;
+          if (p1Done && p2Done) {
+            handleBothEndedRef.current();
+          } else if (!player2HasEndedRef.current && player2PromptsUsedRef.current < MAX_PROMPTS) {
+            setCurrentTurn('player2');
+            addGameMessage('System', `TURN:player2 It's now ${player2NameRef.current}'s turn!`, 'system');
+          }
+          player1SubmittingRef.current = false;
+          return;
+        }
+
         console.log(`[handleSubmit] Player1 submitting prompt #${newPromptsUsed}`);
 
         // Set processing FIRST before any other state updates
@@ -868,7 +1042,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         player2SubmittingRef.current = true;
 
         const prompt = player2.prompt.trim();
+        const normalizedPrompt = prompt.toLowerCase().replace(/\s+/g, ' ');
+        const isDuplicate = player2PromptHistoryRef.current.has(normalizedPrompt);
+        player2PromptHistoryRef.current.add(normalizedPrompt);
         const newPromptsUsed = player2.promptsUsed + 1;
+
+        if (isDuplicate) {
+          console.log(`[handleSubmit] Player2 duplicate prompt — wasted turn, -10 penalty`);
+          player2PenaltyRef.current += 10;
+          savePenaltyToBackend(2, player2PenaltyRef.current);
+          const penaltyScore = player2.score - 10;
+          setPlayer2((prev) => ({ ...prev, promptsUsed: prev.promptsUsed + 1, prompt: '', score: prev.score - 10 }));
+          addGameMessage(player2.name, `Prompt #${newPromptsUsed}: "${prompt}"`, 'player2');
+          addGameMessage('Judge Alpha', `Duplicate prompt detected! ${player2.name} loses 10 marks as penalty. Turn wasted — no AI generation.`, 'judge');
+          // Broadcast score update
+          addGameMessage('System', `SCORE_UPDATE:player2:${penaltyScore}:${newPromptsUsed}`, 'system');
+
+          // Check if both players are effectively done
+          const p2Done = player2.hasEnded || newPromptsUsed >= MAX_PROMPTS;
+          const p1Done = player1HasEndedRef.current || player1PromptsUsedRef.current >= MAX_PROMPTS;
+          if (p1Done && p2Done) {
+            handleBothEndedRef.current();
+          } else if (!player1HasEndedRef.current && player1PromptsUsedRef.current < MAX_PROMPTS) {
+            setCurrentTurn('player1');
+            addGameMessage('System', `TURN:player1 It's now ${player1NameRef.current}'s turn!`, 'system');
+          }
+          player2SubmittingRef.current = false;
+          return;
+        }
+
         console.log(`[handleSubmit] Player2 submitting prompt #${newPromptsUsed}`);
 
         // Set processing FIRST before any other state updates
@@ -897,16 +1099,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   );
 
   const handleBothEnded = useCallback(async () => {
-    console.log('[handleBothEnded] Both players have ended their prompts');
+    console.log('[handleBothEnded] Both players are done — triggering evaluation');
+    if (gameEndedRef.current) {
+      console.log('[handleBothEnded] Game already ended, skipping');
+      return;
+    }
     gameEndedRef.current = true;
     setIsActive(false);
 
-    // Broadcast GAME_END to notify all players (including Player 1 who ended first)
-    addGameMessage('System', 'GAME_END Both players have ended their prompts!', 'system');
-    addGameMessage('Judge Alpha', 'Both players have ended! Evaluating workspaces...', 'judge');
+    // Broadcast GAME_END to notify all players
+    addGameMessage('System', 'GAME_END Both players have finished!', 'system');
+    addGameMessage('Judge Alpha', 'Both players are done! Evaluating workspaces...', 'judge');
 
     await runEvaluation();
   }, [addGameMessage, runEvaluation]);
+
+  const handleBothEndedRef = useRef(handleBothEnded);
+  useEffect(() => {
+    handleBothEndedRef.current = handleBothEnded;
+  }, [handleBothEnded]);
 
   const handleEndPrompts = useCallback(
     (player: Player) => {
@@ -914,26 +1125,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setPlayer1((prev) => ({ ...prev, hasEnded: true }));
         addGameMessage(player1.name, 'Has ended their prompts early!', 'player1');
 
-        if (currentTurn === 'player1' && !player2.hasEnded) {
+        if (currentTurn === 'player1' && !player2.hasEnded && player2.promptsUsed < MAX_PROMPTS) {
           setCurrentTurn('player2');
           // Broadcast turn switch via Supabase
           addGameMessage('System', `TURN:player2 It's now ${player2.name}'s turn!`, 'system');
         }
 
-        if (player2.hasEnded) {
+        if (player2.hasEnded || player2.promptsUsed >= MAX_PROMPTS) {
           handleBothEnded();
         }
       } else {
         setPlayer2((prev) => ({ ...prev, hasEnded: true }));
         addGameMessage(player2.name, 'Has ended their prompts early!', 'player2');
 
-        if (currentTurn === 'player2' && !player1.hasEnded) {
+        if (currentTurn === 'player2' && !player1.hasEnded && player1.promptsUsed < MAX_PROMPTS) {
           setCurrentTurn('player1');
           // Broadcast turn switch via Supabase
           addGameMessage('System', `TURN:player1 It's now ${player1.name}'s turn!`, 'system');
         }
 
-        if (player1.hasEnded) {
+        if (player1.hasEnded || player1.promptsUsed >= MAX_PROMPTS) {
           handleBothEnded();
         }
       }
@@ -982,7 +1193,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setShouldNavigateToResults(false);
     player1SubmittingRef.current = false;
     player2SubmittingRef.current = false;
+    player1PromptHistoryRef.current = new Set();
+    player2PromptHistoryRef.current = new Set();
+    player1PenaltyRef.current = 0;
+    player2PenaltyRef.current = 0;
     gameStartTimeRef.current = 0;
+    localPlayerNumRef.current = null;
   }, [disconnectPlayer, clearSupabaseMessages, unsubscribeFromGame]);
 
   // Timer countdown (syncs with game start time to prevent drift)

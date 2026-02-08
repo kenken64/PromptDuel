@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRoom } from '../contexts/RoomContext';
 import { Leaderboard } from '../components/Leaderboard';
 import { config } from '../config';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileLobbyLayout } from '../components/mobile';
 
 interface RoomInfo {
   id: number;
@@ -13,6 +15,8 @@ interface RoomInfo {
   hostUsername: string;
   player1Username: string | null;
   player2Username: string | null;
+  player1Ready: boolean;
+  player2Ready: boolean;
   spectatorCount: number;
   createdAt: Date;
 }
@@ -29,6 +33,7 @@ export function LobbyPage() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [selectedChallenge, setSelectedChallenge] = useState<1 | 2>(1);
+  const [selectedTimer, setSelectedTimer] = useState<20 | 30 | 60>(20);
 
   // Filter and pagination state
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,7 +102,7 @@ export function LobbyPage() {
 
   const handleCreateRoom = async () => {
     setError('');
-    const result = await createRoom(selectedChallenge);
+    const result = await createRoom(selectedChallenge, selectedTimer);
 
     if (result.success && result.code) {
       setShowCreateModal(false);
@@ -129,6 +134,91 @@ export function LobbyPage() {
     navigate('/');
   };
 
+  const isMobile = useIsMobile();
+
+  // Mobile handlers
+  const handleMobileCreateRoom = async (challenge: number, timerMinutes: number = 20) => {
+    const result = await createRoom(challenge, timerMinutes);
+    if (result.success && result.code) {
+      navigate(`/room/${result.code}`);
+    }
+  };
+
+  const handleMobileJoinRoom = async (code: string) => {
+    const result = await joinRoom(code);
+    if (result.success) {
+      navigate(`/room/${code}`);
+    }
+  };
+
+  const handleMobileSpectate = async (code: string) => {
+    const result = await spectateRoom(code);
+    if (result.success) {
+      navigate(`/game/${code}`);
+    }
+  };
+
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <>
+        <MobileLobbyLayout
+          username={user?.username || ''}
+          rooms={rooms.map(r => ({
+            id: r.id,
+            code: r.code,
+            challenge: r.challenge,
+            status: r.status,
+            hostUsername: r.hostUsername,
+            player1Username: r.player1Username || undefined,
+            player2Username: r.player2Username || undefined,
+            player1Ready: r.player1Ready,
+            player2Ready: r.player2Ready,
+            spectatorCount: r.spectatorCount,
+          }))}
+          isLoading={isLoadingRooms}
+          onCreateRoom={handleMobileCreateRoom}
+          onJoinRoom={handleMobileJoinRoom}
+          onSpectate={handleMobileSpectate}
+          onRefresh={fetchRooms}
+          onLogout={handleLogout}
+          onShowLeaderboard={() => setShowLeaderboard(true)}
+        />
+        {/* Leaderboard Modal for Mobile */}
+        {showLeaderboard && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.9)',
+              zIndex: 1000,
+              overflow: 'auto',
+              padding: '1rem',
+            }}
+          >
+            <div style={{ maxWidth: '500px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.7rem', color: '#92cc41' }}>Leaderboard</span>
+                <button
+                  onClick={() => setShowLeaderboard(false)}
+                  className="nes-btn is-error"
+                  style={{ fontSize: '0.4rem', padding: '0.25rem 0.5rem' }}
+                >
+                  Close
+                </button>
+              </div>
+              <Leaderboard />
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Desktop Layout
   return (
     <div className="page-container font-['Press_Start_2P']">
       <div className="bg-pattern"></div>
@@ -145,9 +235,18 @@ export function LobbyPage() {
           </div>
 
           <div className="flex items-center gap-4 animate-fade-in animate-delay-1">
-            <span style={{ fontSize: '0.7rem', color: '#888' }}>
-              Welcome, <span style={{ color: '#92cc41' }}>{user?.username}</span>
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span style={{ fontSize: '0.7rem', color: '#888' }}>
+                Welcome, <span style={{ color: '#92cc41' }}>{user?.username}</span>
+              </span>
+              <Link
+                to="/change-password"
+                style={{ fontSize: '0.5rem', color: '#666' }}
+                className="hover:text-[#f7d51d] transition-colors"
+              >
+                Change Password
+              </Link>
+            </div>
             <button onClick={handleLogout} className="nes-btn is-error text-xs">
               Logout
             </button>
@@ -509,6 +608,32 @@ export function LobbyPage() {
                     <p style={{ color: '#888', fontSize: '0.6rem' }}>QuantumHeist - Advanced</p>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Timer Selection */}
+            <div className="mb-6">
+              <p className="text-sm mb-4 text-gray-300">Game Timer:</p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[20, 30, 60].map((mins) => (
+                  <div
+                    key={mins}
+                    onClick={() => setSelectedTimer(mins as 20 | 30 | 60)}
+                    style={{
+                      flex: 1,
+                      padding: '12px 8px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      border: selectedTimer === mins ? '3px solid #f7d51d' : '2px solid #333',
+                      backgroundColor: selectedTimer === mins ? 'rgba(247, 213, 29, 0.1)' : 'transparent',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <p style={{ color: selectedTimer === mins ? '#f7d51d' : '#888', fontSize: '0.8rem', marginBottom: '2px' }}>
+                      {mins} min
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
 

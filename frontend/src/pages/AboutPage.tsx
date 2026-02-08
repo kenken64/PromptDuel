@@ -102,7 +102,7 @@ export function AboutPage() {
               }}
             >
               Prompt Duel is a competitive platform where players battle head-to-head in real-time prompt engineering
-              challenges. Using Claude Code, players craft prompts to solve coding challenges, competing to achieve
+              challenges. Using AI, players craft prompts to solve coding challenges, competing to achieve
               the best results with the fewest prompts.
             </p>
             <p
@@ -183,7 +183,7 @@ export function AboutPage() {
                 textAlign: 'center',
               }}
             >
-              {['React', 'TypeScript', 'Vite', 'Bun', 'Elysia', 'SQLite', 'Claude Code', 'NES.css'].map((tech) => (
+              {['React', 'TypeScript', 'Vite', 'Bun', 'Elysia', 'SQLite', 'Multi-AI', 'NES.css'].map((tech) => (
                 <div
                   key={tech}
                   style={{
@@ -232,7 +232,7 @@ export function AboutPage() {
         }}
       >
         <p style={{ color: '#555', fontSize: '0.6rem' }}>
-          © 2024 Prompt Duel. Powered by Claude Code.
+          © 2024 Prompt Duel. Powered by AI.
         </p>
       </footer>
     </div>

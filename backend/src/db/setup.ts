@@ -33,6 +33,10 @@ db.exec(`
     player2_id INTEGER REFERENCES users(id),
     player1_ready INTEGER NOT NULL DEFAULT 0,
     player2_ready INTEGER NOT NULL DEFAULT 0,
+    player1_provider TEXT NOT NULL DEFAULT 'anthropic',
+    player1_model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+    player2_provider TEXT NOT NULL DEFAULT 'anthropic',
+    player2_model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
@@ -90,6 +94,16 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  -- Password reset tokens
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    token TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
   -- Create indexes for better query performance
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
@@ -98,6 +112,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_room_spectators_room_id ON room_spectators(room_id);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_id);
   CREATE INDEX IF NOT EXISTS idx_challenge_prompts_challenge ON challenge_prompts(challenge);
+  CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
+  CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
 `);
 
 // Seed Challenge 1 prompts (Bracket Validator)
@@ -202,6 +218,71 @@ if (existingPrompts2.count === 0) {
   console.log('Challenge 2 prompts seeded!');
 } else {
   console.log('Challenge 2 prompts already exist, skipping seed.');
+}
+
+// Migration: Add provider columns to existing rooms table if they don't exist
+try {
+  const tableInfo = db.query("PRAGMA table_info(rooms)").all() as { name: string }[];
+  const columnNames = tableInfo.map(col => col.name);
+
+  if (!columnNames.includes('player1_provider')) {
+    console.log('Adding player1_provider column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player1_provider TEXT NOT NULL DEFAULT 'anthropic'");
+  }
+  if (!columnNames.includes('player1_model')) {
+    console.log('Adding player1_model column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player1_model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514'");
+  }
+  if (!columnNames.includes('player2_provider')) {
+    console.log('Adding player2_provider column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player2_provider TEXT NOT NULL DEFAULT 'anthropic'");
+  }
+  if (!columnNames.includes('player2_model')) {
+    console.log('Adding player2_model column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player2_model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514'");
+  }
+  // Game results columns
+  if (!columnNames.includes('evaluation_results')) {
+    console.log('Adding evaluation_results column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN evaluation_results TEXT");
+  }
+  if (!columnNames.includes('player1_score')) {
+    console.log('Adding player1_score column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player1_score INTEGER");
+  }
+  if (!columnNames.includes('player2_score')) {
+    console.log('Adding player2_score column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player2_score INTEGER");
+  }
+  if (!columnNames.includes('player1_prompts_used')) {
+    console.log('Adding player1_prompts_used column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player1_prompts_used INTEGER");
+  }
+  if (!columnNames.includes('player2_prompts_used')) {
+    console.log('Adding player2_prompts_used column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player2_prompts_used INTEGER");
+  }
+  if (!columnNames.includes('winner_id')) {
+    console.log('Adding winner_id column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN winner_id INTEGER REFERENCES users(id)");
+  }
+  // Timer minutes column
+  if (!columnNames.includes('timer_minutes')) {
+    console.log('Adding timer_minutes column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN timer_minutes INTEGER NOT NULL DEFAULT 20");
+  }
+  // Penalty columns for tracking duplicate prompt deductions
+  if (!columnNames.includes('player1_penalty')) {
+    console.log('Adding player1_penalty column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player1_penalty INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columnNames.includes('player2_penalty')) {
+    console.log('Adding player2_penalty column...');
+    db.exec("ALTER TABLE rooms ADD COLUMN player2_penalty INTEGER NOT NULL DEFAULT 0");
+  }
+  console.log('Provider, results, timer, and penalty columns migration complete!');
+} catch (migrationError) {
+  console.error('Migration error (may be safe to ignore if columns exist):', migrationError);
 }
 
 console.log('Database setup complete!');

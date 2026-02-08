@@ -38,14 +38,21 @@ export function UnifiedPromptArea({
   readOnly = false,
   currentUserPlayer = null,
 }: UnifiedPromptAreaProps) {
+  // Either player processing should lock the UI (turn-based game)
   const isProcessing = player1Processing || player2Processing;
+
+  // Check if the current user's own processing is in progress
+  const myProcessing = currentUserPlayer === 'player1' ? player1Processing :
+                       currentUserPlayer === 'player2' ? player2Processing : false;
+
   const currentPlayer = currentTurn === 'player1' ? player1 : player2;
 
   // The player data for the current user (for showing their own stats)
   const myPlayer = currentUserPlayer === 'player1' ? player1 : currentUserPlayer === 'player2' ? player2 : null;
 
-  // Can only edit if it's your turn (currentUserPlayer matches currentTurn)
-  const canEdit = !readOnly && currentUserPlayer === currentTurn;
+  // Can only edit if it's your turn AND not processing (currentUserPlayer matches currentTurn)
+  // Double-check both global processing and own processing state
+  const canEdit = !readOnly && currentUserPlayer === currentTurn && !myProcessing;
 
   // Debug logging
   console.log('[UnifiedPromptArea] Debug:', {
@@ -55,6 +62,9 @@ export function UnifiedPromptArea({
     isActive,
     readOnly,
     isProcessing,
+    myProcessing,
+    player1Processing,
+    player2Processing,
     'currentPlayer.hasEnded': currentPlayer.hasEnded,
     'currentPlayer.promptsUsed': currentPlayer.promptsUsed,
   });
@@ -71,10 +81,10 @@ export function UnifiedPromptArea({
       {/* Player Indicators */}
       <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-2 sm:gap-4">
         <div
-          className={`nes-container ${isPlayer1Turn && isActive ? 'is-rounded' : 'is-dark'}`}
+          className={`nes-container ${isPlayer1Turn && isActive ? 'is-rounded' : 'is-dark'} ${player1Processing ? 'player-processing' : ''}`}
           style={{
             padding: '0.5rem',
-            borderColor: isPlayer1Turn && isActive ? '#209cee' : undefined,
+            borderColor: player1Processing ? undefined : isPlayer1Turn && isActive ? '#209cee' : undefined,
             borderWidth: isPlayer1Turn && isActive ? '4px' : undefined,
             flex: '1 1 auto',
             minWidth: '140px',
@@ -82,7 +92,13 @@ export function UnifiedPromptArea({
         >
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center sm:justify-start">
             <div className="flex items-center gap-1 sm:gap-2">
-              <i className="nes-icon coin is-small"></i>
+              {player1Processing ? (
+                <span className="think-icon">
+                  <i className="nes-icon coin is-small"></i>
+                </span>
+              ) : (
+                <i className="nes-icon coin is-small"></i>
+              )}
               <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.7rem)' }}>{player1.name}</span>
             </div>
             <div
@@ -97,6 +113,11 @@ export function UnifiedPromptArea({
               <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
             )}
           </div>
+          {player1Processing && (
+            <div className="pixel-load-track is-p1">
+              <div className="pixel-load-fill" />
+            </div>
+          )}
         </div>
 
         <div className="nes-badge is-splited" style={{ fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)' }}>
@@ -105,10 +126,10 @@ export function UnifiedPromptArea({
         </div>
 
         <div
-          className={`nes-container ${!isPlayer1Turn && isActive ? 'is-rounded' : 'is-dark'}`}
+          className={`nes-container ${!isPlayer1Turn && isActive ? 'is-rounded' : 'is-dark'} ${player2Processing ? 'player-processing' : ''}`}
           style={{
             padding: '0.5rem',
-            borderColor: !isPlayer1Turn && isActive ? '#92cc41' : undefined,
+            borderColor: player2Processing ? undefined : !isPlayer1Turn && isActive ? '#92cc41' : undefined,
             borderWidth: !isPlayer1Turn && isActive ? '4px' : undefined,
             flex: '1 1 auto',
             minWidth: '140px',
@@ -116,7 +137,13 @@ export function UnifiedPromptArea({
         >
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center sm:justify-start">
             <div className="flex items-center gap-1 sm:gap-2">
-              <i className="nes-icon coin is-small"></i>
+              {player2Processing ? (
+                <span className="think-icon">
+                  <i className="nes-icon coin is-small"></i>
+                </span>
+              ) : (
+                <i className="nes-icon coin is-small"></i>
+              )}
               <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.7rem)' }}>{player2.name}</span>
             </div>
             <div
@@ -131,17 +158,46 @@ export function UnifiedPromptArea({
               <span style={{ fontSize: 'clamp(0.4rem, 1.5vw, 0.5rem)', color: '#e76e55' }}>ENDED</span>
             )}
           </div>
+          {player2Processing && (
+            <div className="pixel-load-track">
+              <div className="pixel-load-fill" />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Turn Indicator */}
       {isActive && (
         <div className="mb-4 text-center">
-          <div className={`nes-badge ${currentPlayer.hasEnded ? 'is-dark' : isPlayer1Turn ? 'is-error' : 'is-success'}`}>
-            <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.8rem)' }}>
-              {currentPlayer.hasEnded ? `${currentPlayer.name} has ended` : `${currentPlayer.name}'s Turn!`}
-            </span>
-          </div>
+          {isProcessing ? (
+            <div className="turn-indicator-active" style={{ display: 'inline-block' }}>
+              <div
+                className="nes-container is-dark is-rounded"
+                style={{
+                  display: 'inline-block',
+                  padding: '0.4rem 1.2rem',
+                  borderColor: isPlayer1Turn ? '#209cee' : '#92cc41',
+                  borderWidth: '3px',
+                }}
+              >
+                <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.75rem)', color: isPlayer1Turn ? '#209cee' : '#92cc41' }}>
+                  <span className="think-icon" style={{ marginRight: '0.5rem' }}>{'{ }'}</span>
+                  AI coding for {currentPlayer.name}
+                  <span className="pixel-dots" style={{ marginLeft: '0.4rem' }}>
+                    <span /><span /><span />
+                  </span>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className={currentPlayer.hasEnded ? '' : 'turn-indicator-active'} style={{ display: 'inline-block' }}>
+              <div className={`nes-badge ${currentPlayer.hasEnded ? 'is-dark' : isPlayer1Turn ? 'is-error' : 'is-success'}`}>
+                <span style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.8rem)' }}>
+                  {currentPlayer.hasEnded ? `${currentPlayer.name} has ended` : `${currentPlayer.name}'s Turn!`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -160,7 +216,7 @@ export function UnifiedPromptArea({
           <textarea
             value={currentPlayer.prompt}
             onChange={(e) => onPromptChange(currentTurn, e.target.value)}
-            disabled={!canEdit || !isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded}
+            disabled={!canEdit || !isActive || currentPlayer.isReady || currentPlayer.promptsUsed >= MAX_PROMPTS || currentPlayer.hasEnded || isProcessing}
             maxLength={MAX_PROMPT_CHARS + 50}
             className="nes-textarea"
             style={{
@@ -232,17 +288,38 @@ export function UnifiedPromptArea({
           currentPlayer.hasEnded ||
           isProcessing
         }
-        className={`nes-btn ${isPlayer1Turn ? 'is-primary' : 'is-success'}`}
+        className={`nes-btn ${isPlayer1Turn ? 'is-primary' : 'is-success'} ${isProcessing ? 'ai-processing-btn' : ''}`}
         type="button"
         style={{
           width: '100%',
           marginBottom: '0.5rem',
           fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
           minHeight: '44px',
-          opacity: isProcessing || !canEdit ? 0.5 : 1,
+          opacity: isProcessing ? 0.7 : !canEdit ? 0.5 : 1,
         }}
       >
-        {isProcessing ? '⏳ Claude is working...' : !canEdit && currentUserPlayer ? `⏳ ${currentPlayer.name}'s Turn` : currentPlayer.hasEnded ? '✗ Ended' : currentPlayer.isReady ? '✓ Submitted!' : '→ Submit Prompt'}
+        {isProcessing ? (
+          <span>
+            <span className="think-icon" style={{ marginRight: '0.3rem' }}>{'{ }'}</span>
+            {' '}AI is coding
+            <span className="pixel-dots" style={{ marginLeft: '0.3rem' }}>
+              <span /><span /><span />
+            </span>
+          </span>
+        ) : !canEdit && currentUserPlayer ? (
+          <span className="waiting-for-turn">
+            Waiting for {currentPlayer.name}
+            <span className="pixel-dots" style={{ marginLeft: '0.3rem' }}>
+              <span /><span /><span />
+            </span>
+          </span>
+        ) : currentPlayer.hasEnded ? (
+          'Ended'
+        ) : currentPlayer.isReady ? (
+          'Submitted!'
+        ) : (
+          'Submit Prompt'
+        )}
       </button>
 
       {/* End Prompts Early Button - only show when it's your turn */}
@@ -260,7 +337,16 @@ export function UnifiedPromptArea({
             opacity: isProcessing ? 0.5 : 1,
           }}
         >
-          {isProcessing ? 'Claude is working...' : `End My Prompts Early (${myPlayer.promptsUsed}/7 used)`}
+          {isProcessing ? (
+            <span>
+              AI is coding
+              <span className="pixel-dots" style={{ marginLeft: '0.3rem' }}>
+                <span /><span /><span />
+              </span>
+            </span>
+          ) : (
+            `End My Prompts Early (${myPlayer.promptsUsed}/7 used)`
+          )}
         </button>
       )}
 
