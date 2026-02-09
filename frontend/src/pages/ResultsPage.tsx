@@ -174,9 +174,29 @@ export function ResultsPage() {
   const handlePlayAgain = async () => {
     // Clear stored results
     localStorage.removeItem('promptduel_results');
+
+    // Clean up workspace (fire-and-forget)
+    const playerName = user?.username || '';
+    if (playerName) {
+      try {
+        await fetch(`${config.apiUrl}/workspaces/${encodeURIComponent(playerName)}/${selectedChallenge}/cleanup`, {
+          method: 'POST',
+        });
+      } catch (e) {
+        console.error('Workspace cleanup failed:', e);
+      }
+    }
+
     await leaveRoom(code);
     resetGame();
     navigate('/lobby');
+  };
+
+  const handleDownloadWorkspace = () => {
+    const playerName = user?.username || '';
+    if (playerName) {
+      window.open(`${config.apiUrl}/workspaces/${encodeURIComponent(playerName)}/${selectedChallenge}/download`, '_blank');
+    }
   };
 
   const isMobile = useIsMobile();
@@ -194,6 +214,7 @@ export function ResultsPage() {
         roomData={roomData || undefined}
         samplePrompts={samplePrompts}
         onPlayAgain={handlePlayAgain}
+        onDownloadWorkspace={handleDownloadWorkspace}
         isLoadingResults={isLoadingResults}
       />
     );
@@ -510,7 +531,18 @@ export function ResultsPage() {
         )}
 
         {/* Actions */}
-        <div className="text-center animate-fade-in animate-delay-3 mb-8">
+        <div className="text-center animate-fade-in animate-delay-3 mb-8 flex justify-center gap-4 flex-wrap">
+          <button
+            onClick={handleDownloadWorkspace}
+            className="nes-btn is-primary"
+            style={{
+              fontSize: 'clamp(0.6rem, 2.5vw, 0.8rem)',
+              padding: '0.75rem 2rem',
+              minHeight: '44px',
+            }}
+          >
+            Download My Code
+          </button>
           <button
             onClick={handlePlayAgain}
             className="nes-btn is-success animate-glow"

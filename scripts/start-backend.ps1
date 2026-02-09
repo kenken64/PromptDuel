@@ -46,7 +46,8 @@ if (-not (Test-Path "sqlite.db")) {
 # Start the backend in the background
 Write-Host "Starting Bun server..."
 $LogFile = Join-Path $LogDir "backend.log"
-$Process = Start-Process -FilePath "bun" -ArgumentList "run", "dev" -WorkingDirectory $BackendDir -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err" -PassThru -WindowStyle Hidden
+# Merge stderr into stdout so all logs (including errors) appear in one file
+$Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c bun run dev > `"$LogFile`" 2>&1" -WorkingDirectory $BackendDir -PassThru -WindowStyle Hidden
 
 $Process.Id | Out-File -FilePath $PidFile -NoNewline
 

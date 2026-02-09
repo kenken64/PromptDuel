@@ -8,6 +8,28 @@ import { authRoutes } from './routes/auth';
 import { roomRoutes } from './routes/rooms';
 import { chatRoutes } from './routes/chat';
 import { roomWebSocket } from './ws/roomServer';
+import { resolve, join, normalize } from 'path';
+import { existsSync } from 'fs';
+import { rm } from 'fs/promises';
+import archiver from 'archiver';
+
+const WORKSPACES_DIR = process.env.WORKSPACES_DIR
+  ? resolve(process.env.WORKSPACES_DIR)
+  : resolve(__dirname, '../../workspaces');
+
+function sanitizePlayerName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50);
+}
+
+function getWorkspacePath(playerName: string, challenge: number): string | null {
+  const sanitized = sanitizePlayerName(playerName);
+  const workspacePath = normalize(join(WORKSPACES_DIR, `${sanitized}_challenge${challenge}`));
+  // Path traversal protection
+  if (!workspacePath.startsWith(normalize(WORKSPACES_DIR))) {
+    return null;
+  }
+  return workspacePath;
+}
 
 const app = new Elysia()
   .use(
@@ -161,6 +183,62 @@ const app = new Elysia()
         success: false,
         error: 'Evaluation failed',
       };
+    }
+  })
+  // Workspace download (zip)
+  .get('/workspaces/:playerName/:challenge/download', async ({ params, set }) => {
+    const challenge = parseInt(params.challenge);
+    const workspacePath = getWorkspacePath(params.playerName, challenge);
+
+    if (!workspacePath || !existsSync(workspacePath)) {
+      set.status = 404;
+      return { success: false, error: 'Workspace not found' };
+    }
+
+    const sanitized = sanitizePlayerName(params.playerName);
+    const filename = `${sanitized}_challenge${challenge}.zip`;
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.directory(workspacePath, false);
+    archive.finalize();
+
+    // Convert Node.js Readable to Web ReadableStream for Bun compatibility
+    const webStream = new ReadableStream({
+      start(controller) {
+        archive.on('data', (chunk: Buffer) => controller.enqueue(chunk));
+        archive.on('end', () => controller.close());
+        archive.on('error', (err: Error) => controller.error(err));
+      },
+    });
+
+    return new Response(webStream, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
+  })
+  // Workspace cleanup (delete)
+  .post('/workspaces/:playerName/:challenge/cleanup', async ({ params, set }) => {
+    const challenge = parseInt(params.challenge);
+    const workspacePath = getWorkspacePath(params.playerName, challenge);
+
+    if (!workspacePath) {
+      set.status = 400;
+      return { success: false, error: 'Invalid workspace path' };
+    }
+
+    if (!existsSync(workspacePath)) {
+      return { success: true, message: 'Workspace already cleaned up' };
+    }
+
+    try {
+      await rm(workspacePath, { recursive: true });
+      return { success: true, message: 'Workspace cleaned up' };
+    } catch (error) {
+      console.error('Workspace cleanup error:', error);
+      set.status = 500;
+      return { success: false, error: 'Cleanup failed' };
     }
   })
   .listen(3000);

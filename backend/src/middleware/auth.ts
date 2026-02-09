@@ -12,10 +12,31 @@ export interface JwtPayload {
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-change-in-production';
 
-// Helper function to get user from token
+// TTL cache for token → user lookups (30-second expiry, max 1000 entries)
+const AUTH_CACHE_TTL = 30_000;
+const AUTH_CACHE_MAX = 1000;
+const authCache = new Map<string, { user: any; expires: number }>();
+
+function pruneAuthCache() {
+  if (authCache.size <= AUTH_CACHE_MAX) return;
+  const now = Date.now();
+  for (const [key, entry] of authCache) {
+    if (entry.expires < now || authCache.size > AUTH_CACHE_MAX) {
+      authCache.delete(key);
+    }
+  }
+}
+
+// Helper function to get user from token (with TTL cache)
 export async function getUserFromToken(token: string | undefined) {
   if (!token) {
     return null;
+  }
+
+  // Check cache first
+  const cached = authCache.get(token);
+  if (cached && cached.expires > Date.now()) {
+    return cached.user;
   }
 
   try {
@@ -40,6 +61,7 @@ export async function getUserFromToken(token: string | undefined) {
       .limit(1);
 
     if (!session) {
+      authCache.set(token, { user: null, expires: Date.now() + AUTH_CACHE_TTL });
       return null;
     }
 
@@ -55,7 +77,13 @@ export async function getUserFromToken(token: string | undefined) {
       .where(eq(users.id, payload.userId))
       .limit(1);
 
-    return user || null;
+    const result = user || null;
+
+    // Cache the result
+    authCache.set(token, { user: result, expires: Date.now() + AUTH_CACHE_TTL });
+    pruneAuthCache();
+
+    return result;
   } catch (error) {
     console.error('[Auth] Error in getUserFromToken:', error);
     return null;

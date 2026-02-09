@@ -1,9 +1,11 @@
+import React from 'react';
+
 interface TimerProps {
   timeLeft: number;
   isActive: boolean;
 }
 
-export function Timer({ timeLeft, isActive }: TimerProps) {
+export const Timer = React.memo(function Timer({ timeLeft, isActive }: TimerProps) {
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
@@ -22,4 +24,4 @@ export function Timer({ timeLeft, isActive }: TimerProps) {
       </div>
     </div>
   );
-}
+});

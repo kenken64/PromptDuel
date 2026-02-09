@@ -1,3 +1,4 @@
+import React from 'react';
 import { MAX_PROMPT_CHARS, getMultiplier, MULTIPLIER_TABLE, MAX_PROMPTS } from '../gameRules';
 
 type Player = 'player1' | 'player2';
@@ -25,7 +26,7 @@ interface UnifiedPromptAreaProps {
   currentUserPlayer?: Player | null; // Which player the current user is
 }
 
-export function UnifiedPromptArea({
+export const UnifiedPromptArea = React.memo(function UnifiedPromptArea({
   player1,
   player2,
   currentTurn,
@@ -404,4 +405,4 @@ export function UnifiedPromptArea({
       )}
     </div>
   );
-}
+});

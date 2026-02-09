@@ -14,7 +14,8 @@ export const PROVIDER_CONFIG = {
     name: 'OpenAI',
     icon: '🧠',
     models: [
-      { id: 'gpt-4o', name: 'GPT-4o', default: true },
+      { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', default: true },
+      { id: 'gpt-4o', name: 'GPT-4o' },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
     ],
   },

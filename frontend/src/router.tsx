@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { RoomProvider } from './contexts/RoomContext';
@@ -7,34 +7,56 @@ import { SupabaseChatProvider } from './contexts/SupabaseChatContext';
 import { SupabaseGameProvider } from './contexts/SupabaseGameContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
-// Pages
+// Eagerly loaded pages (small, on critical path)
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { ChangePasswordPage } from './pages/ChangePasswordPage';
-import { AboutPage } from './pages/AboutPage';
-import { LobbyPage } from './pages/LobbyPage';
-import { WaitingRoom } from './pages/WaitingRoom';
-import { GamePage } from './pages/GamePage';
-import { SpectatorView } from './pages/SpectatorView';
-import { ResultsPage } from './pages/ResultsPage';
 
-// Layout wrapper with providers
-function AppLayout() {
+// Lazy-loaded pages
+const RegisterPage = React.lazy(() => import('./pages/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const ChangePasswordPage = React.lazy(() => import('./pages/ChangePasswordPage').then(m => ({ default: m.ChangePasswordPage })));
+const AboutPage = React.lazy(() => import('./pages/AboutPage').then(m => ({ default: m.AboutPage })));
+const LobbyPage = React.lazy(() => import('./pages/LobbyPage').then(m => ({ default: m.LobbyPage })));
+const WaitingRoom = React.lazy(() => import('./pages/WaitingRoom').then(m => ({ default: m.WaitingRoom })));
+const GamePage = React.lazy(() => import('./pages/GamePage').then(m => ({ default: m.GamePage })));
+const SpectatorView = React.lazy(() => import('./pages/SpectatorView').then(m => ({ default: m.SpectatorView })));
+const ResultsPage = React.lazy(() => import('./pages/ResultsPage').then(m => ({ default: m.ResultsPage })));
+
+// Loading fallback
+function PageLoading() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#212529', color: '#fff' }}>
+      <div className="nes-container is-dark is-rounded" style={{ padding: '2rem' }}>
+        <p style={{ fontSize: 'clamp(0.8rem, 3vw, 1rem)' }}>Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+// Root layout — only AuthProvider (lightweight for public routes)
+function RootLayout() {
   return (
     <AuthProvider>
-      <RoomProvider>
-        <SupabaseChatProvider>
-          <SupabaseGameProvider>
-            <GameProvider>
-              <Outlet />
-            </GameProvider>
-          </SupabaseGameProvider>
-        </SupabaseChatProvider>
-      </RoomProvider>
+      <Suspense fallback={<PageLoading />}>
+        <Outlet />
+      </Suspense>
     </AuthProvider>
+  );
+}
+
+// Game layout — wraps routes that need game providers
+function GameLayout() {
+  return (
+    <RoomProvider>
+      <SupabaseChatProvider>
+        <SupabaseGameProvider>
+          <GameProvider>
+            <Outlet />
+          </GameProvider>
+        </SupabaseGameProvider>
+      </SupabaseChatProvider>
+    </RoomProvider>
   );
 }
 
@@ -49,9 +71,9 @@ function ProtectedLayout() {
 
 const router = createBrowserRouter([
   {
-    element: <AppLayout />,
+    element: <RootLayout />,
     children: [
-      // Public routes
+      // Public routes (no game providers needed)
       {
         path: '/',
         element: <LandingPage onSelectChallenge={() => {}} />,
@@ -76,33 +98,39 @@ const router = createBrowserRouter([
         path: '/about',
         element: <AboutPage />,
       },
-      // Protected routes
+      // Protected routes with game providers
       {
         element: <ProtectedLayout />,
         children: [
           {
-            path: '/lobby',
-            element: <LobbyPage />,
-          },
-          {
             path: '/change-password',
             element: <ChangePasswordPage />,
           },
+          // Game-related routes get full game provider stack
           {
-            path: '/room/:code',
-            element: <WaitingRoom />,
-          },
-          {
-            path: '/game/:code',
-            element: <GamePage />,
-          },
-          {
-            path: '/spectate/:code',
-            element: <SpectatorView />,
-          },
-          {
-            path: '/results/:code',
-            element: <ResultsPage />,
+            element: <GameLayout />,
+            children: [
+              {
+                path: '/lobby',
+                element: <LobbyPage />,
+              },
+              {
+                path: '/room/:code',
+                element: <WaitingRoom />,
+              },
+              {
+                path: '/game/:code',
+                element: <GamePage />,
+              },
+              {
+                path: '/spectate/:code',
+                element: <SpectatorView />,
+              },
+              {
+                path: '/results/:code',
+                element: <ResultsPage />,
+              },
+            ],
           },
         ],
       },
