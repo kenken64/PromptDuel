@@ -242,7 +242,10 @@ async function generateCode(session, prompt, ws) {
     // Build the message with context
     const userMessage = currentCode && !currentCode.includes('Your code will appear here')
       ? `Current code in index.js:\n\`\`\`javascript\n${currentCode}\n\`\`\`\n\nUser request: ${prompt}\n\nUpdate the code based on the request. Return the COMPLETE updated code.`
-      : `User request: ${prompt}\n\nGenerate complete code for index.js. Include a comment header at the very top: "// Player: ${playerName} | Prompt Duel - Challenge ${challenge}"`;
+      : `User request: ${prompt}\n\nGenerate complete code for index.js.`;
+
+    // Inject player name into system prompt so it persists across all generations
+    const systemPrompt = `${config.systemPrompt}\n\nIMPORTANT: Always include this comment as the very first line of the generated code:\n// Player: ${playerName} | Prompt Duel - Challenge ${challenge}`;
 
     // Create provider instance and generate code
     console.log(`[generateCode] Creating ${provider} provider with model: ${model}`);
@@ -250,7 +253,7 @@ async function generateCode(session, prompt, ws) {
 
     console.log(`[generateCode] Calling ${providerInfo.providerName} API...`);
     console.log(`[generateCode] User message length: ${userMessage.length}`);
-    console.log(`[generateCode] System prompt length: ${config.systemPrompt.length}`);
+    console.log(`[generateCode] System prompt length: ${systemPrompt.length}`);
 
     // Send heartbeat messages while waiting for API response
     const heartbeat = setInterval(() => {
@@ -262,7 +265,7 @@ async function generateCode(session, prompt, ws) {
 
     let response;
     try {
-      response = await aiProvider.generateCode(config.systemPrompt, userMessage, 8192);
+      response = await aiProvider.generateCode(systemPrompt, userMessage, 8192);
       console.log(`[generateCode] API call returned successfully`);
     } catch (apiError) {
       console.error(`[generateCode] API CALL FAILED:`);
