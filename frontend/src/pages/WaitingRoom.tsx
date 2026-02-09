@@ -7,6 +7,7 @@ import { config } from '../config';
 import { ProviderSelector, PROVIDER_CONFIG, getProviderDisplayName, getDefaultModel, type ProviderKey } from '../components/ProviderSelector';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { MobileWaitingRoomLayout } from '../components/mobile';
+import { formatChatTime } from '../utils/formatTime';
 
 export function WaitingRoom() {
   const { code } = useParams<{ code: string }>();
@@ -271,6 +272,7 @@ export function WaitingRoom() {
         spectators={displayRoom?.spectators || []}
         chatMessages={chatMessages}
         isChatLoading={isChatLoading}
+        userTimezone={user?.timezone || 'Asia/Singapore'}
         onProviderChange={handleProviderChange}
         onModelChange={handleModelChange}
         onReady={() => toggleReady()}
@@ -529,6 +531,11 @@ export function WaitingRoom() {
                           {isCurrentUser ? 'You' : msg.username}:
                         </span>{' '}
                         <span style={{ color: '#ccc', fontSize: '0.7rem' }}>{msg.message}</span>
+                        {msg.created_at && (
+                          <div style={{ fontSize: '0.5rem', color: '#666', marginTop: '0.15rem' }}>
+                            {formatChatTime(msg.created_at, user?.timezone || 'Asia/Singapore')}
+                          </div>
+                        )}
                       </span>
                     </div>
                   );

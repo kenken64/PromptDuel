@@ -285,5 +285,19 @@ try {
   console.error('Migration error (may be safe to ignore if columns exist):', migrationError);
 }
 
+// Migration: Add timezone column to users table
+try {
+  const usersTableInfo = db.query("PRAGMA table_info(users)").all() as { name: string }[];
+  const usersColumnNames = usersTableInfo.map(col => col.name);
+
+  if (!usersColumnNames.includes('timezone')) {
+    console.log('Adding timezone column to users...');
+    db.exec("ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Singapore'");
+    console.log('Timezone column added!');
+  }
+} catch (migrationError) {
+  console.error('Timezone migration error:', migrationError);
+}
+
 console.log('Database setup complete!');
 db.close();

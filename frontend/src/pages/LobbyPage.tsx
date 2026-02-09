@@ -239,13 +239,22 @@ export function LobbyPage() {
               <span style={{ fontSize: '0.7rem', color: '#888' }}>
                 Welcome, <span style={{ color: '#92cc41' }}>{user?.username}</span>
               </span>
-              <Link
-                to="/change-password"
-                style={{ fontSize: '0.5rem', color: '#666' }}
-                className="hover:text-[#f7d51d] transition-colors"
-              >
-                Change Password
-              </Link>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <Link
+                  to="/settings"
+                  style={{ fontSize: '0.5rem', color: '#666' }}
+                  className="hover:text-[#f7d51d] transition-colors"
+                >
+                  Settings
+                </Link>
+                <Link
+                  to="/change-password"
+                  style={{ fontSize: '0.5rem', color: '#666' }}
+                  className="hover:text-[#f7d51d] transition-colors"
+                >
+                  Change Password
+                </Link>
+              </div>
             </div>
             <button onClick={handleLogout} className="nes-btn is-error text-xs">
               Logout

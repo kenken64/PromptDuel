@@ -16,6 +16,7 @@ const RegisterPage = React.lazy(() => import('./pages/RegisterPage').then(m => (
 const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const ChangePasswordPage = React.lazy(() => import('./pages/ChangePasswordPage').then(m => ({ default: m.ChangePasswordPage })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const AboutPage = React.lazy(() => import('./pages/AboutPage').then(m => ({ default: m.AboutPage })));
 const LobbyPage = React.lazy(() => import('./pages/LobbyPage').then(m => ({ default: m.LobbyPage })));
 const WaitingRoom = React.lazy(() => import('./pages/WaitingRoom').then(m => ({ default: m.WaitingRoom })));
@@ -105,6 +106,10 @@ const router = createBrowserRouter([
           {
             path: '/change-password',
             element: <ChangePasswordPage />,
+          },
+          {
+            path: '/settings',
+            element: <SettingsPage />,
           },
           // Game-related routes get full game provider stack
           {

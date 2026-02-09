@@ -71,6 +71,7 @@ export async function getUserFromToken(token: string | undefined) {
         id: users.id,
         username: users.username,
         email: users.email,
+        timezone: users.timezone,
         createdAt: users.createdAt,
       })
       .from(users)

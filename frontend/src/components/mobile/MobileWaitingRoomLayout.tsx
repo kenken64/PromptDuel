@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ProviderSelector, getProviderDisplayName, type ProviderKey } from '../ProviderSelector';
+import { formatChatTime } from '../../utils/formatTime';
 
 interface ChatMessage {
   id?: number;
   user_id?: number;
   username: string;
   message: string;
+  created_at?: string;
 }
 
 interface Spectator {
@@ -36,6 +38,7 @@ interface MobileWaitingRoomLayoutProps {
   spectators?: Spectator[];
   chatMessages?: ChatMessage[];
   isChatLoading?: boolean;
+  userTimezone?: string;
   onProviderChange: (provider: ProviderKey) => void;
   onModelChange: (model: string) => void;
   onReady: () => void;
@@ -67,6 +70,7 @@ export function MobileWaitingRoomLayout({
   spectators = [],
   chatMessages = [],
   isChatLoading = false,
+  userTimezone = 'Asia/Singapore',
   onProviderChange,
   onModelChange,
   onReady,
@@ -416,6 +420,11 @@ export function MobileWaitingRoomLayout({
                           {isCurrentUser ? 'You' : msg.username}:
                         </span>{' '}
                         <span style={{ color: '#ccc', fontSize: '0.45rem' }}>{msg.message}</span>
+                        {msg.created_at && (
+                          <div style={{ fontSize: '0.3rem', color: '#666', marginTop: '0.1rem' }}>
+                            {formatChatTime(msg.created_at, userTimezone)}
+                          </div>
+                        )}
                       </span>
                     </div>
                   );
