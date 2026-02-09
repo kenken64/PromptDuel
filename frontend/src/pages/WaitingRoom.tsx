@@ -490,7 +490,7 @@ export function WaitingRoom() {
           <div className="nes-container is-dark with-title animate-fade-in animate-delay-3">
             <p className="title">Chat</p>
 
-            <div className="chat-container mb-4 p-2">
+            <div className="chat-container mb-4 p-2" style={{ overflowX: 'hidden' }}>
               {chatMessages.length === 0 ? (
                 <p className="text-xs text-gray-500 text-center py-4">
                   No messages yet. Say hello!
@@ -514,6 +514,9 @@ export function WaitingRoom() {
                           borderRadius: '4px',
                           backgroundColor: isCurrentUser ? 'rgba(146, 204, 65, 0.2)' : 'rgba(32, 156, 238, 0.1)',
                           maxWidth: '80%',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          textAlign: 'left',
                         }}
                       >
                         <span

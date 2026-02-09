@@ -374,6 +374,7 @@ export function MobileWaitingRoomLayout({
               style={{
                 flex: 1,
                 overflowY: 'auto',
+                overflowX: 'hidden',
                 padding: '0.5rem',
                 marginBottom: '0.5rem',
               }}
@@ -401,6 +402,8 @@ export function MobileWaitingRoomLayout({
                           backgroundColor: isCurrentUser ? 'rgba(146, 204, 65, 0.2)' : 'rgba(32, 156, 238, 0.1)',
                           maxWidth: '85%',
                           textAlign: 'left',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
                         }}
                       >
                         <span
