@@ -98,8 +98,11 @@ function sanitizeName(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50);
 }
 
-// Challenge descriptions for system prompts
-const CHALLENGE_CONFIG = {
+// Backend API URL for fetching challenge config
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+
+// Fallback challenge config (used if backend is unreachable)
+const CHALLENGE_FALLBACK = {
   1: {
     name: 'BracketValidator - Stack-Based CLI Tool',
     systemPrompt: `You are a coding assistant helping build a bracket validation CLI tool in Node.js.
@@ -139,9 +142,64 @@ The code must be complete and runnable with "node index.js".`,
   },
 };
 
+// In-memory challenge cache with TTL
+const challengeCache = new Map(); // id -> { data, fetchedAt }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function fetchChallengeFromAPI(id) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/challenges/${id}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.success && data.challenge) {
+      return { name: data.challenge.name, systemPrompt: data.challenge.systemPrompt };
+    }
+    throw new Error('Invalid response from backend');
+  } catch (error) {
+    console.warn(`[ChallengeCache] Failed to fetch challenge ${id} from API:`, error.message);
+    return null;
+  }
+}
+
+async function getChallengeConfig(id) {
+  const cached = challengeCache.get(id);
+  if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const fromAPI = await fetchChallengeFromAPI(id);
+  if (fromAPI) {
+    challengeCache.set(id, { data: fromAPI, fetchedAt: Date.now() });
+    return fromAPI;
+  }
+
+  // Fallback to hardcoded config
+  return CHALLENGE_FALLBACK[id] || CHALLENGE_FALLBACK[1];
+}
+
+// Pre-warm cache at startup
+async function warmChallengeCache() {
+  console.log('[ChallengeCache] Loading challenges from backend...');
+  let loaded = 0;
+  for (const id of [1, 2]) {
+    const fromAPI = await fetchChallengeFromAPI(id);
+    if (fromAPI) {
+      challengeCache.set(id, { data: fromAPI, fetchedAt: Date.now() });
+      loaded++;
+    }
+  }
+  if (loaded > 0) {
+    console.log(`[ChallengeCache] Loaded ${loaded} challenges from backend`);
+  } else {
+    console.warn('[ChallengeCache] Could not reach backend, using fallback config');
+  }
+}
+
+warmChallengeCache();
+
 // Initialize workspace with starter files (async)
 async function initializeWorkspace(playerDir, playerName, challenge) {
-  const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
+  const config = await getChallengeConfig(challenge);
 
   // Create package.json
   const packageJson = {
@@ -211,7 +269,7 @@ function broadcastToSpectators(roomCode, playerName, data) {
 // Generate code using AI provider
 async function generateCode(session, prompt, ws) {
   const { playerName, challenge, playerDir, roomCode, provider = 'anthropic', model } = session;
-  const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
+  const config = await getChallengeConfig(challenge);
 
   console.log(`[generateCode] Starting for ${playerName}`);
   console.log(`[generateCode] Prompt: "${prompt.substring(0, 100)}..."`);

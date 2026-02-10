@@ -136,6 +136,22 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
     .default(sql`(unixepoch())`),
 });
 
+// Challenges - single source of truth for challenge metadata and AI system prompts
+export const challenges = sqliteTable('challenges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),              // "BracketValidator - Stack-Based CLI Tool"
+  shortName: text('short_name').notNull(),   // "BracketValidator"
+  difficulty: text('difficulty').notNull(),   // "beginner" | "advanced"
+  description: text('description').notNull(), // Short description for cards
+  longDescription: text('long_description').notNull(), // For info tabs
+  videoUrl: text('video_url').notNull(),     // YouTube embed URL
+  systemPrompt: text('system_prompt').notNull(), // Full AI system prompt
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // Leaderboard table to track player scores across challenges
 export const leaderboard = sqliteTable('leaderboard', {
   id: integer('id').primaryKey({ autoIncrement: true }),

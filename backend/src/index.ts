@@ -7,6 +7,7 @@ import { desc, eq } from 'drizzle-orm';
 import { authRoutes } from './routes/auth';
 import { roomRoutes } from './routes/rooms';
 import { chatRoutes } from './routes/chat';
+import { challengeRoutes } from './routes/challenges';
 import { roomWebSocket } from './ws/roomServer';
 import { resolve, join, normalize } from 'path';
 import { existsSync } from 'fs';
@@ -46,6 +47,8 @@ const app = new Elysia()
   .use(roomRoutes)
   // Chat routes
   .use(chatRoutes)
+  // Challenge routes
+  .use(challengeRoutes)
   // Room WebSocket
   .use(roomWebSocket)
   // Legacy endpoints (keeping for backwards compatibility)

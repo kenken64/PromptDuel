@@ -5,6 +5,7 @@ import { useRoom } from '../contexts/RoomContext';
 import { Leaderboard } from '../components/Leaderboard';
 import { config } from '../config';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useChallenges } from '../hooks/useChallenges';
 import { MobileLobbyLayout } from '../components/mobile';
 
 interface RoomInfo {
@@ -42,6 +43,7 @@ export function LobbyPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const roomsPerPage = 6;
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const { getChallenge } = useChallenges();
 
   const fetchRooms = useCallback(async () => {
     if (!token) return;
@@ -588,7 +590,7 @@ export function LobbyPage() {
                   }}></div>
                   <div>
                     <p style={{ color: '#92cc41', fontSize: '0.8rem', marginBottom: '4px' }}>Challenge 1</p>
-                    <p style={{ color: '#888', fontSize: '0.6rem' }}>BracketValidator - Beginner</p>
+                    <p style={{ color: '#888', fontSize: '0.6rem' }}>{getChallenge(1)?.shortName || 'BracketValidator'} - Beginner</p>
                   </div>
                 </div>
               </div>
@@ -614,7 +616,7 @@ export function LobbyPage() {
                   }}></div>
                   <div>
                     <p style={{ color: '#209cee', fontSize: '0.8rem', marginBottom: '4px' }}>Challenge 2</p>
-                    <p style={{ color: '#888', fontSize: '0.6rem' }}>QuantumHeist - Advanced</p>
+                    <p style={{ color: '#888', fontSize: '0.6rem' }}>{getChallenge(2)?.shortName || 'QuantumHeist'} - Advanced</p>
                   </div>
                 </div>
               </div>

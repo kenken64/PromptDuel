@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useChallenges } from '../hooks/useChallenges';
 
 // Strip ANSI escape codes from terminal output
 function stripAnsi(str: string): string {
@@ -26,12 +27,13 @@ interface InfoTabsProps {
   challenge: 1 | 2;
 }
 
-const CHALLENGE_VIDEOS = {
+// Fallback values in case API hasn't loaded yet
+const FALLBACK_VIDEOS: Record<number, string> = {
   1: 'https://www.youtube.com/embed/dEV5yZeD4bA',
   2: 'https://www.youtube.com/embed/N4PRqcKdj-8',
 };
 
-const CHALLENGE_DESCRIPTIONS = {
+const FALLBACK_DESCRIPTIONS: Record<number, { title: string; description: string }> = {
   1: {
     title: 'Challenge 1 - Beginner',
     description: 'Watch the video above for challenge requirements. Build a Node.js CLI application based on the specifications provided.',
@@ -43,6 +45,14 @@ const CHALLENGE_DESCRIPTIONS = {
 };
 
 export function InfoTabs({ player1, player2, player1Console, player2Console, challenge }: InfoTabsProps) {
+  const { getChallenge } = useChallenges();
+  const challengeData = getChallenge(challenge);
+
+  const videoUrl = challengeData?.videoUrl || FALLBACK_VIDEOS[challenge];
+  const descTitle = challengeData
+    ? `Challenge ${challenge} - ${challengeData.difficulty.charAt(0).toUpperCase() + challengeData.difficulty.slice(1)}`
+    : FALLBACK_DESCRIPTIONS[challenge].title;
+  const descText = challengeData?.longDescription || FALLBACK_DESCRIPTIONS[challenge].description;
   const [activeTab, setActiveTab] = useState<'video' | 'console' | 'evaluation'>('video');
 
   // Clean ANSI codes from console output and filter empty lines
@@ -126,7 +136,7 @@ export function InfoTabs({ player1, player2, player1Console, player2Console, cha
                     height: '100%',
                     border: 'none',
                   }}
-                  src={CHALLENGE_VIDEOS[challenge]}
+                  src={videoUrl}
                   title={`Challenge ${challenge} Requirements Video`}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -137,8 +147,8 @@ export function InfoTabs({ player1, player2, player1Console, player2Console, cha
               className="nes-container"
               style={{ fontSize: 'clamp(0.5rem, 2.5vw, 0.6rem)', lineHeight: '1.4' }}
             >
-              <h4 style={{ marginBottom: '0.5rem' }}>{CHALLENGE_DESCRIPTIONS[challenge].title}</h4>
-              <p>{CHALLENGE_DESCRIPTIONS[challenge].description}</p>
+              <h4 style={{ marginBottom: '0.5rem' }}>{descTitle}</h4>
+              <p>{descText}</p>
             </div>
           </div>
         ) : activeTab === 'console' ? (

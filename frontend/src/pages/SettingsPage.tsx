@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -32,6 +32,14 @@ export function SettingsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const allTimezones = getAllTimezones();
 
@@ -47,11 +55,15 @@ export function SettingsPage() {
       const result = await updateTimezone(selectedTimezone);
       if (result.success) {
         setSuccess('Timezone updated successfully!');
+        setToast({ message: 'Timezone updated successfully!', type: 'success' });
       } else {
-        setError(result.error || 'Failed to update timezone');
+        const msg = result.error || 'Failed to update timezone';
+        setError(msg);
+        setToast({ message: msg, type: 'error' });
       }
     } catch {
       setError('Network error. Please try again.');
+      setToast({ message: 'Network error. Please try again.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -157,6 +169,31 @@ export function SettingsPage() {
           </Link>
         </div>
       </div>
+      {/* Toast notification */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            padding: '12px 24px',
+            backgroundColor: toast.type === 'success' ? '#92cc41' : '#e76e55',
+            color: '#000',
+            fontSize: '0.7rem',
+            fontFamily: "'Press Start 2P', cursive",
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            border: '4px solid',
+            borderColor: toast.type === 'success' ? '#76a832' : '#c0503a',
+            animation: 'fadeIn 0.3s ease',
+            cursor: 'pointer',
+          }}
+          onClick={() => setToast(null)}
+        >
+          {toast.type === 'success' ? '✓ ' : '✗ '}{toast.message}
+        </div>
+      )}
     </div>
   );
 }
