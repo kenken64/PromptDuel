@@ -23,6 +23,7 @@ const WaitingRoom = React.lazy(() => import('./pages/WaitingRoom').then(m => ({ 
 const GamePage = React.lazy(() => import('./pages/GamePage').then(m => ({ default: m.GamePage })));
 const SpectatorView = React.lazy(() => import('./pages/SpectatorView').then(m => ({ default: m.SpectatorView })));
 const ResultsPage = React.lazy(() => import('./pages/ResultsPage').then(m => ({ default: m.ResultsPage })));
+const AdminPage = React.lazy(() => import('./pages/AdminPage').then(m => ({ default: m.AdminPage })));
 
 // Loading fallback
 function PageLoading() {
@@ -98,6 +99,10 @@ const router = createBrowserRouter([
       {
         path: '/about',
         element: <AboutPage />,
+      },
+      {
+        path: '/admin',
+        element: <AdminPage />,
       },
       // Protected routes with game providers
       {

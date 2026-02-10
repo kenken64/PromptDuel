@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth';
 import { roomRoutes } from './routes/rooms';
 import { chatRoutes } from './routes/chat';
 import { challengeRoutes } from './routes/challenges';
+import { adminRoutes } from './routes/admin';
 import { roomWebSocket } from './ws/roomServer';
 import { resolve, join, normalize } from 'path';
 import { existsSync } from 'fs';
@@ -49,6 +50,8 @@ const app = new Elysia()
   .use(chatRoutes)
   // Challenge routes
   .use(challengeRoutes)
+  // Admin routes
+  .use(adminRoutes)
   // Room WebSocket
   .use(roomWebSocket)
   // Legacy endpoints (keeping for backwards compatibility)
