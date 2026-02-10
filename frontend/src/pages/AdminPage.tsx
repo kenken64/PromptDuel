@@ -267,53 +267,66 @@ export function AdminPage() {
     return (
       <div className="page-container flex items-center justify-center p-4 font-['Press_Start_2P']">
         <div className="bg-pattern"></div>
-        <div className="nes-container is-dark max-w-sm w-full animate-fade-in glow-primary">
+
+        <div className="nes-container is-dark max-w-md w-full animate-fade-in glow-primary">
           <div className="text-center mb-6">
-            <h1 style={{ fontSize: '1rem', color: '#209cee', marginBottom: '24px' }}>Admin Panel</h1>
-            <div
-              style={{
-                backgroundColor: '#000',
-                padding: '16px',
-                borderRadius: '8px',
-                display: 'inline-block',
-                border: '2px solid #333',
-              }}
-            >
-              <img src="/logo.png" alt="Prompt Duel" style={{ height: '80px', width: 'auto', display: 'block' }} />
+            <h1 style={{ fontSize: '1.2rem', color: '#f7d51d', marginBottom: '24px' }}>Admin Panel</h1>
+            <div style={{
+              backgroundColor: '#000',
+              padding: '16px',
+              borderRadius: '8px',
+              display: 'inline-block',
+              border: '2px solid #333',
+            }}>
+              <img src="/logo.png" alt="Prompt Duel" style={{ height: '150px', width: 'auto', display: 'block' }} />
             </div>
           </div>
 
+          <div className="mb-8 text-center">
+            <p className="text-[#f7d51d] glow-text">Restricted Access</p>
+            <p className="text-xs text-gray-400 mt-3">Enter the admin password to continue.</p>
+          </div>
+
+          {loginError && (
+            <div
+              className="nes-container is-rounded mb-4 animate-fade-in"
+              style={{ borderColor: '#e76e55', background: 'rgba(231, 110, 85, 0.1)' }}
+            >
+              <p className="text-xs" style={{ color: '#e76e55' }}>{loginError}</p>
+            </div>
+          )}
+
           <form onSubmit={handleLogin}>
             <div className="nes-field mb-4">
-              <label htmlFor="admin_password" className="text-gray-300 mb-2 block" style={{ fontSize: '0.65rem' }}>
-                Admin Password
-              </label>
+              <label htmlFor="admin_password" className="text-gray-300 mb-2 block">Password</label>
               <input
                 id="admin_password"
                 type="password"
                 className="nes-input is-dark"
+                placeholder="Enter admin password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={loginLoading}
                 autoFocus
-                style={{ fontSize: '0.7rem' }}
               />
             </div>
 
-            {loginError && (
-              <div
-                className="nes-container is-rounded mb-4"
-                style={{ borderColor: '#e76e55', background: 'rgba(231, 110, 85, 0.1)' }}
+            <div style={{ textAlign: 'center' }}>
+              <button
+                type="submit"
+                className="nes-btn is-warning"
+                disabled={loginLoading || !password}
               >
-                <p className="text-xs" style={{ color: '#e76e55' }}>
-                  {loginError}
-                </p>
-              </div>
-            )}
-
-            <button type="submit" className="nes-btn is-primary w-full" disabled={loginLoading || !password}>
-              {loginLoading ? 'Validating...' : 'Enter'}
-            </button>
+                {loginLoading ? 'Validating...' : 'Authenticate'}
+              </button>
+            </div>
           </form>
+
+          <div className="mt-8 pt-6 border-t border-gray-700 text-center">
+            <a href="/" className="text-xs text-gray-400 hover:text-[#92cc41] transition-colors">
+              &lt; Back to Home
+            </a>
+          </div>
         </div>
       </div>
     );
