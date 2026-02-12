@@ -126,30 +126,33 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Prompt Duel                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────────┐    ┌─────────────┐    ┌──────────────────────┐ │
-│  │  Frontend   │    │   Backend   │    │   AI Code Server     │ │
-│  │   (React)   │◄──►│  (Elysia)   │    │  (Multi-Provider)    │ │
-│  │  Port 5173  │    │  Port 3000  │    │     Port 3001        │ │
-│  └──────┬──────┘    └──────┬──────┘    └──────────┬───────────┘ │
-│         │                  │                       │             │
-│         │           ┌──────▼──────┐                │             │
-│         │           │   SQLite    │                ▼             │
-│         │           │  Database   │       ┌───────────────┐     │
-│         │           └─────────────┘       │ AI Providers  │     │
-│         │                                 │ Anthropic /   │     │
-│         │                                 │ OpenAI/Google │     │
-│         │                  ┌──────────────┴───────────────┘     │
-│         │                  │                                     │
-│         │           ┌──────▼──────┐                              │
-│         └──────────►│  Supabase   │◄─────────────────────────── │
-│                     │  (Realtime) │                              │
-│                     └─────────────┘                              │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Client
+        FE["Frontend<br/>(React + Vite)<br/>Port 5173"]
+    end
+
+    subgraph Server
+        BE["Backend<br/>(Elysia/Bun)<br/>Port 3000"]
+        AI["AI Code Server<br/>(Multi-Provider)<br/>Port 3001"]
+        DB[("SQLite<br/>Database")]
+    end
+
+    subgraph External Services
+        SB["Supabase<br/>(Realtime)"]
+        AP["Anthropic<br/>Claude API"]
+        OP["OpenAI<br/>GPT API"]
+        GP["Google<br/>Gemini API"]
+    end
+
+    FE <-->|"REST API"| BE
+    FE <-->|"WebSocket"| AI
+    FE <-->|"Realtime Sync"| SB
+    BE --> DB
+    BE <--> SB
+    AI --> AP
+    AI --> OP
+    AI --> GP
 ```
 
 ## Quick Start
