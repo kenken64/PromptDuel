@@ -156,11 +156,11 @@ When both players exhaust their allowed prompts (7 max), the game automatically 
 
 ```mermaid
 sequenceDiagram
-    participate P1 as Player 1
-    participate P2 as Player 2
-    participate G as GameContext (P1/P2)
-    participate S as Supabase (DB)
-    participate B as Backend (API)
+    participant P1 as Player 1
+    participant P2 as Player 2
+    participant G as GameContext (P1/P2)
+    participant S as Supabase (DB)
+    participant B as Backend (API)
 
     Note over P1,P2: Turn-based loop continues...
     
@@ -193,10 +193,10 @@ If both players decide to "End Duel" at nearly the same time, the system uses th
 
 ```mermaid
 sequenceDiagram
-    participate P1 as Player 1
-    participate P2 as Player 2
-    participate S as Supabase
-    participate B as Backend
+    participant P1 as Player 1
+    participant P2 as Player 2
+    participant S as Supabase
+    participant B as Backend
 
     P1->>S: Send "GAME_END" (Timestamp: T1)
     P2->>S: Send "GAME_END" (Timestamp: T2)
@@ -240,10 +240,11 @@ If the Host (Player 1) manually ends the game *before* Player 2 has finished the
 
 ```mermaid
 sequenceDiagram
-    participate P1 as Player 1 (Host)
-    participate P2 as Player 2
-    participate G as GameContext
-    
+    participant P1 as Player 1 (Host)
+    participant P2 as Player 2
+    participant G as GameContext
+    participant S as Supabase
+
     P1->>G: Clicks "End Duel"
     alt Player 2 is NOT Finished
         G->>G: Set Winner = Player 2 (Forfeit)
@@ -260,9 +261,11 @@ Global timer synchronization is critical. The game monitors `timeLeft` on both c
 
 ```mermaid
 sequenceDiagram
-    participate T as Timer (Client Side)
-    participate G as GameContext
-    
+    participant T as Timer (Client Side)
+    participant G as GameContext
+    participant S as Supabase
+    participant B as Backend
+
     T->>T: Tick... 00:00
     T->>G: handleTimeUp()
     G->>S: Broadcast "GAME_END: Timeout"
