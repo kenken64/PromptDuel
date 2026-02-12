@@ -55,6 +55,191 @@ graph TD
     *   Generated code is written to the workspace and output is streamed back to the client.
 4.  **Evaluation**: The Backend reads the files generated in the workspace to score the solution.
 
+## 3.1 Entity Relationship Diagram (ERD)
+
+```mermaid
+erDiagram
+    users {
+        int id PK
+        text username UK
+        text email UK
+        text password_hash
+        text timezone
+        timestamp last_login_at
+        timestamp created_at
+    }
+
+    sessions {
+        int id PK
+        int user_id FK
+        text token UK
+        timestamp expires_at
+        timestamp created_at
+    }
+
+    rooms {
+        int id PK
+        text code UK
+        int host_id FK
+        int challenge
+        int timer_minutes
+        text status
+        int player1_id FK
+        int player2_id FK
+        boolean player1_ready
+        boolean player2_ready
+        text player1_provider
+        text player1_model
+        text player2_provider
+        text player2_model
+        text evaluation_results
+        int player1_score
+        int player2_score
+        int player1_prompts_used
+        int player2_prompts_used
+        int player1_penalty
+        int player2_penalty
+        int winner_id FK
+        timestamp created_at
+    }
+
+    room_spectators {
+        int id PK
+        int room_id FK
+        int user_id FK
+        timestamp joined_at
+    }
+
+    chat_messages {
+        int id PK
+        int room_id FK
+        int user_id FK
+        text message
+        timestamp created_at
+    }
+
+    prompts {
+        int id PK
+        int user_id FK
+        text title
+        text content
+        timestamp created_at
+    }
+
+    duels {
+        int id PK
+        int prompt1_id FK
+        int prompt2_id FK
+        int winner_id FK
+        text status
+        timestamp created_at
+    }
+
+    challenges {
+        int id PK
+        text name
+        text short_name
+        text difficulty
+        text description
+        text long_description
+        text video_url
+        text system_prompt
+        boolean active
+        timestamp created_at
+    }
+
+    challenge_prompts {
+        int id PK
+        int challenge
+        int prompt_number
+        text title
+        text content
+        timestamp created_at
+    }
+
+    password_reset_tokens {
+        int id PK
+        int user_id FK
+        text token UK
+        timestamp expires_at
+        timestamp used_at
+        timestamp created_at
+    }
+
+    leaderboard {
+        int id PK
+        text player_name
+        int challenge
+        int score
+        int max_score
+        int percentage
+        text grade
+        int prompts_used
+        timestamp created_at
+    }
+
+    users ||--o{ sessions : "has"
+    users ||--o{ prompts : "creates"
+    users ||--o{ rooms : "hosts (host_id)"
+    users ||--o{ rooms : "plays as player1"
+    users ||--o{ rooms : "plays as player2"
+    users ||--o{ rooms : "wins (winner_id)"
+    users ||--o{ room_spectators : "spectates"
+    users ||--o{ chat_messages : "sends"
+    users ||--o{ password_reset_tokens : "requests"
+    rooms ||--o{ room_spectators : "has"
+    rooms ||--o{ chat_messages : "contains"
+    prompts ||--o{ duels : "competes as prompt1"
+    prompts ||--o{ duels : "competes as prompt2"
+    prompts ||--o| duels : "wins"
+```
+
+### 3.2 Supabase Realtime ERD (PostgreSQL)
+
+Supabase is used exclusively for **real-time communication** via PostgreSQL change notifications. Two tables in Supabase handle live messaging — separate from the SQLite database used by the backend.
+
+```mermaid
+erDiagram
+    game_messages {
+        bigserial id PK
+        text room_code
+        text sender
+        text text
+        text message_type "player1 | player2 | judge | system"
+        timestamptz created_at
+    }
+
+    chat_messages {
+        bigserial id PK
+        text room_code
+        int user_id
+        text username
+        text message
+        timestamptz created_at
+    }
+```
+
+**How it works:**
+- Both tables have **Row-Level Security (RLS)** enabled with open read/insert policies
+- Both tables are added to the `supabase_realtime` publication for live change streaming
+- The frontend subscribes to `postgres_changes` events filtered by `room_code`
+
+**Channels:**
+
+| Channel Pattern | Table | Context | Usage |
+|----------------|-------|---------|-------|
+| `game:{roomCode}` | `game_messages` | `SupabaseGameContext` | In-game state sync (turns, scores, processing, game end) |
+| `chat:{roomCode}` | `chat_messages` | `SupabaseChatContext` | Waiting room chat between players |
+
+**Game Message Types:**
+
+| `message_type` | Purpose | Example `text` |
+|----------------|---------|----------------|
+| `player1` | Player 1 game events | Prompt submission info |
+| `player2` | Player 2 game events | Prompt submission info |
+| `system` | Turn & state control | `TURN:player1`, `GAME_END`, `AI is working on Alice` |
+| `judge` | Evaluation results | Score announcements |
+
 ## 4. Key Directories & Files
 
 ### Root

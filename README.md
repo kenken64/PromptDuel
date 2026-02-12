@@ -91,28 +91,9 @@ The multiplier rewards efficiency - fewer prompts = higher multiplier:
 | Challenge 1 | Beginner | **BracketValidator** - Build a CLI tool using stack-based bracket validation |
 | Challenge 2 | Advanced | **QuantumHeist** - Build a terminal pathfinding puzzle game with Dijkstra's algorithm |
 
-## Screenshots
+## Demo
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        PROMPT DUEL                               │
-│                                                                  │
-│   ┌───────────────────────────────────────────────────────────┐ │
-│   │  LOBBY                          Welcome, player1           │ │
-│   ├───────────────────────────────────────────────────────────┤ │
-│   │                                                            │ │
-│   │  [+ Create Room]  [Join by Code]  [Leaderboard]  [Refresh]│ │
-│   │                                                            │ │
-│   │  Available Rooms                                           │ │
-│   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │ │
-│   │  │ ABC123       │  │ XYZ789       │  │ DEF456       │     │ │
-│   │  │ Challenge 1  │  │ Challenge 2  │  │ Challenge 1  │     │ │
-│   │  │ host1 vs ??? │  │ LIVE         │  │ Waiting...   │     │ │
-│   │  │ [Join]       │  │ [Watch]      │  │ [Spectate]   │     │ │
-│   │  └──────────────┘  └──────────────┘  └──────────────┘     │ │
-│   └───────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
+[![Prompt Duel Demo](https://img.youtube.com/vi/YKa3vlg4jPs/maxresdefault.jpg)](https://youtu.be/YKa3vlg4jPs)
 
 ## Tech Stack
 
