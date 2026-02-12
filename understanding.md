@@ -1,5 +1,9 @@
 # Prompt Duel - Codebase Understanding
 
+<p align="center">
+  <img src="architecture-overview.png" alt="Prompt Duel Architecture Overview" />
+</p>
+
 ## 1. Project Overview
 **Prompt Duel** is a competitive multiplayer game where two players battle to write the most efficient prompts for AI code generation. Players are given a coding challenge and must instruct the AI to solve it using as few prompts as possible.
 
