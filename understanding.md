@@ -194,6 +194,52 @@ erDiagram
     prompts ||--o| duels : "wins"
 ```
 
+### 3.2 Supabase Realtime ERD (PostgreSQL)
+
+Supabase is used exclusively for **real-time communication** via PostgreSQL change notifications. Two tables in Supabase handle live messaging — separate from the SQLite database used by the backend.
+
+```mermaid
+erDiagram
+    game_messages {
+        bigserial id PK
+        text room_code
+        text sender
+        text text
+        text message_type "player1 | player2 | judge | system"
+        timestamptz created_at
+    }
+
+    chat_messages {
+        bigserial id PK
+        text room_code
+        int user_id
+        text username
+        text message
+        timestamptz created_at
+    }
+```
+
+**How it works:**
+- Both tables have **Row-Level Security (RLS)** enabled with open read/insert policies
+- Both tables are added to the `supabase_realtime` publication for live change streaming
+- The frontend subscribes to `postgres_changes` events filtered by `room_code`
+
+**Channels:**
+
+| Channel Pattern | Table | Context | Usage |
+|----------------|-------|---------|-------|
+| `game:{roomCode}` | `game_messages` | `SupabaseGameContext` | In-game state sync (turns, scores, processing, game end) |
+| `chat:{roomCode}` | `chat_messages` | `SupabaseChatContext` | Waiting room chat between players |
+
+**Game Message Types:**
+
+| `message_type` | Purpose | Example `text` |
+|----------------|---------|----------------|
+| `player1` | Player 1 game events | Prompt submission info |
+| `player2` | Player 2 game events | Prompt submission info |
+| `system` | Turn & state control | `TURN:player1`, `GAME_END`, `AI is working on Alice` |
+| `judge` | Evaluation results | Score announcements |
+
 ## 4. Key Directories & Files
 
 ### Root
