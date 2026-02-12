@@ -2,8 +2,6 @@
   <img src="logo.png" alt="Prompt Duel" width="300" />
 </p>
 
-<h1 align="center">Prompt Duel</h1>
-
 A competitive multiplayer prompt engineering game where two players battle head-to-head to write the best prompts for AI code generation. Each player gets up to 7 prompts to complete a coding challenge - the fewer prompts used with a higher score, the better!
 
 ## What is Prompt Duel?
