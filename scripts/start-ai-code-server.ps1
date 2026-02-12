@@ -40,7 +40,8 @@ if (-not (Test-Path "node_modules")) {
 # Start the server in the background
 Write-Host "Starting AI Code Server..."
 $LogFile = Join-Path $LogDir "ai-code-server.log"
-$Process = Start-Process -FilePath "node" -ArgumentList "index.js" -WorkingDirectory $ServerDir -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err" -PassThru -WindowStyle Hidden
+# Merge stderr into stdout so all logs (including errors) appear in one file
+$Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c node index.js > `"$LogFile`" 2>&1" -WorkingDirectory $ServerDir -PassThru -WindowStyle Hidden
 
 $Process.Id | Out-File -FilePath $PidFile -NoNewline
 

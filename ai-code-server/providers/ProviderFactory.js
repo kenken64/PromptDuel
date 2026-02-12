@@ -4,8 +4,11 @@ import { GoogleProvider } from './GoogleProvider.js';
 import { PROVIDER_CONFIG, isProviderAvailable } from './config.js';
 
 export class ProviderFactory {
+  // Cache provider instances keyed by "provider:model"
+  static _cache = new Map();
+
   /**
-   * Create a provider instance
+   * Create or retrieve a cached provider instance
    * @param {string} provider - Provider name (anthropic, openai, google)
    * @param {string} model - Model ID (optional, uses default if not provided)
    * @returns {BaseProvider} Provider instance
@@ -27,18 +30,31 @@ export class ProviderFactory {
       model = defaultModel ? defaultModel.id : PROVIDER_CONFIG[provider].models[0].id;
     }
 
+    // Return cached instance if available
+    const cacheKey = `${provider}:${model}`;
+    if (ProviderFactory._cache.has(cacheKey)) {
+      return ProviderFactory._cache.get(cacheKey);
+    }
+
     console.log(`[ProviderFactory] Creating ${provider} provider with model: ${model}`);
 
+    let instance;
     switch (provider) {
       case 'anthropic':
-        return new AnthropicProvider(model);
+        instance = new AnthropicProvider(model);
+        break;
       case 'openai':
-        return new OpenAIProvider(model);
+        instance = new OpenAIProvider(model);
+        break;
       case 'google':
-        return new GoogleProvider(model);
+        instance = new GoogleProvider(model);
+        break;
       default:
         throw new Error(`Provider not implemented: ${provider}`);
     }
+
+    ProviderFactory._cache.set(cacheKey, instance);
+    return instance;
   }
 
   /**

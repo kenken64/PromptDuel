@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useChallenges } from '../hooks/useChallenges';
 import { MobileLandingLayout } from './mobile';
 
 interface LandingPageProps {
@@ -12,6 +13,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { getChallenge } = useChallenges();
+
+  const challenge1 = getChallenge(1);
+  const challenge2 = getChallenge(2);
 
   // Debug: log auth state
   console.log('Auth state:', { isAuthenticated, user });
@@ -376,9 +381,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
               </div>
 
               <h3 style={{ color: '#209cee', fontSize: '1rem', marginBottom: '12px' }}>Challenge 1</h3>
-              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>BracketValidator</p>
+              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>{challenge1?.shortName || 'BracketValidator'}</p>
               <p style={{ color: '#888', fontSize: '0.6rem', lineHeight: '1.9' }}>
-                Perfect for newcomers. Learn the basics of prompt engineering with a straightforward coding challenge.
+                {challenge1?.description || 'Perfect for newcomers. Learn the basics of prompt engineering with a straightforward coding challenge.'}
               </p>
 
               <div
@@ -446,9 +451,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectChallenge }) =
               </div>
 
               <h3 style={{ color: '#92cc41', fontSize: '1rem', marginBottom: '12px' }}>Challenge 2</h3>
-              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>QuantumHeist</p>
+              <p style={{ color: '#666', fontSize: '0.65rem', marginBottom: '16px' }}>{challenge2?.shortName || 'QuantumHeist'}</p>
               <p style={{ color: '#888', fontSize: '0.6rem', lineHeight: '1.9' }}>
-                For experienced prompters. Test your skills with a complex, multi-step coding challenge.
+                {challenge2?.description || 'For experienced prompters. Test your skills with a complex, multi-step coding challenge.'}
               </p>
 
               <div

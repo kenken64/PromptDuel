@@ -1,7 +1,8 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../db';
 import { rooms, roomSpectators, users, sessions } from '../db/schema';
-import { eq, and, ne, lt } from 'drizzle-orm';
+import { eq, and, ne, lt, inArray, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { authPlugin, getUserFromToken } from '../middleware/auth';
 
 // Generate a random 6-character room code
@@ -14,43 +15,50 @@ function generateRoomCode(): string {
   return code;
 }
 
-// Clean up stale rooms (where host has no valid session)
+// Clean up stale rooms (where host has no valid session) — runs on background timer
 async function cleanupStaleRooms() {
   try {
-    // Get all non-finished rooms
-    const activeRooms = await db
-      .select()
-      .from(rooms)
-      .where(ne(rooms.status, 'finished'));
-
     const now = new Date();
 
-    for (const room of activeRooms) {
-      // Check if host has a valid session
-      const [validSession] = await db
-        .select()
-        .from(sessions)
-        .where(and(eq(sessions.userId, room.hostId), lt(now, sessions.expiresAt)))
-        .limit(1);
+    // Single query: find all non-finished rooms whose host has no valid session
+    const staleRooms = await db
+      .select({
+        id: rooms.id,
+        code: rooms.code,
+        status: rooms.status,
+      })
+      .from(rooms)
+      .leftJoin(
+        sessions,
+        and(eq(sessions.userId, rooms.hostId), lt(now, sessions.expiresAt))
+      )
+      .where(and(ne(rooms.status, 'finished'), isNull(sessions.id)));
 
-      if (!validSession) {
-        // Host has no valid session, clean up room
-        if (room.status === 'waiting') {
-          // Delete waiting rooms
-          await db.delete(roomSpectators).where(eq(roomSpectators.roomId, room.id));
-          await db.delete(rooms).where(eq(rooms.id, room.id));
-          console.log(`Cleaned up stale waiting room: ${room.code}`);
-        } else if (room.status === 'playing') {
-          // Mark playing rooms as finished
-          await db.update(rooms).set({ status: 'finished' }).where(eq(rooms.id, room.id));
-          console.log(`Marked stale playing room as finished: ${room.code}`);
-        }
-      }
+    if (staleRooms.length === 0) return;
+
+    const waitingIds = staleRooms.filter(r => r.status === 'waiting').map(r => r.id);
+    const playingIds = staleRooms.filter(r => r.status === 'playing').map(r => r.id);
+
+    // Batch-delete stale waiting rooms
+    if (waitingIds.length > 0) {
+      await db.delete(roomSpectators).where(inArray(roomSpectators.roomId, waitingIds));
+      await db.delete(rooms).where(inArray(rooms.id, waitingIds));
+      console.log(`Cleaned up ${waitingIds.length} stale waiting room(s)`);
+    }
+
+    // Batch-update stale playing rooms to finished
+    if (playingIds.length > 0) {
+      await db.update(rooms).set({ status: 'finished' }).where(inArray(rooms.id, playingIds));
+      console.log(`Marked ${playingIds.length} stale playing room(s) as finished`);
     }
   } catch (error) {
     console.error('Error cleaning up stale rooms:', error);
   }
 }
+
+// Run cleanup on startup and then every 60 seconds
+cleanupStaleRooms();
+setInterval(cleanupStaleRooms, 60_000);
 
 export const roomRoutes = new Elysia({ prefix: '/rooms' })
   .use(authPlugin)
@@ -62,8 +70,10 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
       return { success: false, error: 'Unauthorized' };
     }
 
-    // Clean up stale rooms before listing
-    await cleanupStaleRooms();
+    // Use aliases to JOIN users table 3 times (host, player1, player2) in a single query
+    const hostUser = alias(users, 'hostUser');
+    const p1User = alias(users, 'p1User');
+    const p2User = alias(users, 'p2User');
 
     const availableRooms = await db
       .select({
@@ -77,50 +87,43 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
         player1Ready: rooms.player1Ready,
         player2Ready: rooms.player2Ready,
         createdAt: rooms.createdAt,
+        hostUsername: hostUser.username,
+        player1Username: p1User.username,
+        player2Username: p2User.username,
       })
       .from(rooms)
-      .where(ne(rooms.status, 'finished')); // Show waiting and playing rooms
+      .innerJoin(hostUser, eq(rooms.hostId, hostUser.id))
+      .leftJoin(p1User, eq(rooms.player1Id, p1User.id))
+      .leftJoin(p2User, eq(rooms.player2Id, p2User.id))
+      .where(ne(rooms.status, 'finished'));
 
-    // Enrich with host username
-    const enrichedRooms = await Promise.all(
-      availableRooms.map(async (room) => {
-        const [host] = await db
-          .select({ username: users.username })
-          .from(users)
-          .where(eq(users.id, room.hostId))
-          .limit(1);
-
-        const [player1] = room.player1Id
-          ? await db
-              .select({ username: users.username })
-              .from(users)
-              .where(eq(users.id, room.player1Id))
-              .limit(1)
-          : [null];
-
-        const [player2] = room.player2Id
-          ? await db
-              .select({ username: users.username })
-              .from(users)
-              .where(eq(users.id, room.player2Id))
-              .limit(1)
-          : [null];
-
-        // Count spectators
-        const spectators = await db
-          .select()
-          .from(roomSpectators)
-          .where(eq(roomSpectators.roomId, room.id));
-
-        return {
-          ...room,
-          hostUsername: host?.username,
-          player1Username: player1?.username,
-          player2Username: player2?.username,
-          spectatorCount: spectators.length,
-        };
+    // Fetch spectator counts with a single aggregate query
+    const spectatorCounts = await db
+      .select({
+        roomId: roomSpectators.roomId,
+        count: sql<number>`count(*)`.as('count'),
       })
-    );
+      .from(roomSpectators)
+      .groupBy(roomSpectators.roomId);
+
+    const spectatorMap = new Map(spectatorCounts.map(s => [s.roomId, s.count]));
+
+    const enrichedRooms = availableRooms.map((room) => ({
+      id: room.id,
+      code: room.code,
+      challenge: room.challenge,
+      status: room.status,
+      hostId: room.hostId,
+      player1Id: room.player1Id,
+      player2Id: room.player2Id,
+      player1Ready: room.player1Ready,
+      player2Ready: room.player2Ready,
+      createdAt: room.createdAt,
+      hostUsername: room.hostUsername,
+      player1Username: room.player1Username,
+      player2Username: room.player2Username,
+      spectatorCount: spectatorMap.get(room.id) || 0,
+    }));
 
     return { success: true, rooms: enrichedRooms };
   })
@@ -187,41 +190,39 @@ export const roomRoutes = new Elysia({ prefix: '/rooms' })
       return { success: false, error: 'Unauthorized' };
     }
 
-    const [room] = await db
-      .select()
+    // Single JOIN query for room + host + player1 + player2
+    const hostUser2 = alias(users, 'hostUser2');
+    const p1User2 = alias(users, 'p1User2');
+    const p2User2 = alias(users, 'p2User2');
+
+    const [roomRow] = await db
+      .select({
+        room: rooms,
+        hostId2: hostUser2.id,
+        hostUsername: hostUser2.username,
+        p1Id: p1User2.id,
+        p1Username: p1User2.username,
+        p2Id: p2User2.id,
+        p2Username: p2User2.username,
+      })
       .from(rooms)
+      .innerJoin(hostUser2, eq(rooms.hostId, hostUser2.id))
+      .leftJoin(p1User2, eq(rooms.player1Id, p1User2.id))
+      .leftJoin(p2User2, eq(rooms.player2Id, p2User2.id))
       .where(eq(rooms.code, params.code))
       .limit(1);
 
-    if (!room) {
+    if (!roomRow) {
       set.status = 404;
       return { success: false, error: 'Room not found' };
     }
 
-    // Get player info
-    const [host] = await db
-      .select({ id: users.id, username: users.username })
-      .from(users)
-      .where(eq(users.id, room.hostId))
-      .limit(1);
+    const room = roomRow.room;
+    const host = { id: roomRow.hostId2, username: roomRow.hostUsername };
+    const player1 = roomRow.p1Id ? { id: roomRow.p1Id, username: roomRow.p1Username } : null;
+    const player2 = roomRow.p2Id ? { id: roomRow.p2Id, username: roomRow.p2Username } : null;
 
-    const [player1] = room.player1Id
-      ? await db
-          .select({ id: users.id, username: users.username })
-          .from(users)
-          .where(eq(users.id, room.player1Id))
-          .limit(1)
-      : [null];
-
-    const [player2] = room.player2Id
-      ? await db
-          .select({ id: users.id, username: users.username })
-          .from(users)
-          .where(eq(users.id, room.player2Id))
-          .limit(1)
-      : [null];
-
-    // Get spectators
+    // Get spectators (already uses JOIN — keep as-is)
     const spectatorRows = await db
       .select({
         id: roomSpectators.id,

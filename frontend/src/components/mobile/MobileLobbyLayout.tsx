@@ -83,6 +83,13 @@ export function MobileLobbyLayout({
             <span style={{ fontSize: '0.4rem', color: '#888' }}>{username}</span>
             <div style={{ display: 'flex', gap: '0.25rem' }}>
               <Link
+                to="/settings"
+                className="nes-btn"
+                style={{ fontSize: '0.3rem', padding: '0.2rem 0.4rem', minHeight: 'auto', textDecoration: 'none' }}
+              >
+                Settings
+              </Link>
+              <Link
                 to="/change-password"
                 className="nes-btn"
                 style={{ fontSize: '0.3rem', padding: '0.2rem 0.4rem', minHeight: 'auto', textDecoration: 'none' }}

@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { writeFile, readFile, mkdir } from 'fs/promises';
 import dotenv from 'dotenv';
 import { ProviderFactory, getAvailableProviders, PROVIDER_CONFIG } from './providers/index.js';
 
@@ -15,6 +16,7 @@ console.log('Loaded .env from:', resolve(__dirname, '.env'));
 const PORT = 3001;
 const sessions = new Map();
 const spectatorConnections = new Map(); // roomCode -> Set of WebSocket connections
+const processingLock = new Map(); // sessionId -> boolean (prevents concurrent API calls)
 
 // Log available providers
 console.log('Available AI providers:');
@@ -96,8 +98,11 @@ function sanitizeName(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50);
 }
 
-// Challenge descriptions for system prompts
-const CHALLENGE_CONFIG = {
+// Backend API URL for fetching challenge config
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+
+// Fallback challenge config (used if backend is unreachable)
+const CHALLENGE_FALLBACK = {
   1: {
     name: 'BracketValidator - Stack-Based CLI Tool',
     systemPrompt: `You are a coding assistant helping build a bracket validation CLI tool in Node.js.
@@ -137,9 +142,64 @@ The code must be complete and runnable with "node index.js".`,
   },
 };
 
-// Initialize workspace with starter files
-function initializeWorkspace(playerDir, playerName, challenge) {
-  const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
+// In-memory challenge cache with TTL
+const challengeCache = new Map(); // id -> { data, fetchedAt }
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function fetchChallengeFromAPI(id) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/challenges/${id}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.success && data.challenge) {
+      return { name: data.challenge.name, systemPrompt: data.challenge.systemPrompt };
+    }
+    throw new Error('Invalid response from backend');
+  } catch (error) {
+    console.warn(`[ChallengeCache] Failed to fetch challenge ${id} from API:`, error.message);
+    return null;
+  }
+}
+
+async function getChallengeConfig(id) {
+  const cached = challengeCache.get(id);
+  if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const fromAPI = await fetchChallengeFromAPI(id);
+  if (fromAPI) {
+    challengeCache.set(id, { data: fromAPI, fetchedAt: Date.now() });
+    return fromAPI;
+  }
+
+  // Fallback to hardcoded config
+  return CHALLENGE_FALLBACK[id] || CHALLENGE_FALLBACK[1];
+}
+
+// Pre-warm cache at startup
+async function warmChallengeCache() {
+  console.log('[ChallengeCache] Loading challenges from backend...');
+  let loaded = 0;
+  for (const id of [1, 2]) {
+    const fromAPI = await fetchChallengeFromAPI(id);
+    if (fromAPI) {
+      challengeCache.set(id, { data: fromAPI, fetchedAt: Date.now() });
+      loaded++;
+    }
+  }
+  if (loaded > 0) {
+    console.log(`[ChallengeCache] Loaded ${loaded} challenges from backend`);
+  } else {
+    console.warn('[ChallengeCache] Could not reach backend, using fallback config');
+  }
+}
+
+warmChallengeCache();
+
+// Initialize workspace with starter files (async)
+async function initializeWorkspace(playerDir, playerName, challenge) {
+  const config = await getChallengeConfig(challenge);
 
   // Create package.json
   const packageJson = {
@@ -157,7 +217,7 @@ function initializeWorkspace(playerDir, playerName, challenge) {
 
   const packageJsonPath = resolve(playerDir, 'package.json');
   if (!existsSync(packageJsonPath)) {
-    writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+    await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
     console.log(`Created package.json for ${playerName}`);
   }
 
@@ -174,13 +234,13 @@ Your code will be written to index.js based on your prompts.
 
   const claudeMdPath = resolve(playerDir, 'CLAUDE.md');
   if (!existsSync(claudeMdPath)) {
-    writeFileSync(claudeMdPath, claudeMd);
+    await writeFile(claudeMdPath, claudeMd);
   }
 
   // Create starter index.js if not exists
   const indexJsPath = resolve(playerDir, 'index.js');
   if (!existsSync(indexJsPath)) {
-    writeFileSync(indexJsPath, `// Prompt Duel - Challenge ${challenge}
+    await writeFile(indexJsPath, `// Prompt Duel - Challenge ${challenge}
 // Player: ${playerName}
 //
 // Your code will appear here after submitting prompts.
@@ -209,7 +269,7 @@ function broadcastToSpectators(roomCode, playerName, data) {
 // Generate code using AI provider
 async function generateCode(session, prompt, ws) {
   const { playerName, challenge, playerDir, roomCode, provider = 'anthropic', model } = session;
-  const config = CHALLENGE_CONFIG[challenge] || CHALLENGE_CONFIG[1];
+  const config = await getChallengeConfig(challenge);
 
   console.log(`[generateCode] Starting for ${playerName}`);
   console.log(`[generateCode] Prompt: "${prompt.substring(0, 100)}..."`);
@@ -227,12 +287,14 @@ async function generateCode(session, prompt, ws) {
   ws.send(JSON.stringify({ type: 'output', data: startMsg }));
   broadcastToSpectators(roomCode, playerName, startMsg);
 
+  const startTime = Date.now();
+
   try {
-    // Read current index.js content for context
+    // Read current index.js content for context (async)
     const indexJsPath = resolve(playerDir, 'index.js');
     let currentCode = '';
     if (existsSync(indexJsPath)) {
-      currentCode = readFileSync(indexJsPath, 'utf-8');
+      currentCode = await readFile(indexJsPath, 'utf-8');
     }
 
     // Build the message with context
@@ -240,24 +302,39 @@ async function generateCode(session, prompt, ws) {
       ? `Current code in index.js:\n\`\`\`javascript\n${currentCode}\n\`\`\`\n\nUser request: ${prompt}\n\nUpdate the code based on the request. Return the COMPLETE updated code.`
       : `User request: ${prompt}\n\nGenerate complete code for index.js.`;
 
+    // Inject player name into system prompt so it persists across all generations
+    const systemPrompt = `${config.systemPrompt}\n\nIMPORTANT: Always include this comment as the very first line of the generated code:\n// Player: ${playerName} | Prompt Duel - Challenge ${challenge}`;
+
     // Create provider instance and generate code
     console.log(`[generateCode] Creating ${provider} provider with model: ${model}`);
     const aiProvider = ProviderFactory.create(provider, model);
 
     console.log(`[generateCode] Calling ${providerInfo.providerName} API...`);
     console.log(`[generateCode] User message length: ${userMessage.length}`);
-    console.log(`[generateCode] System prompt length: ${config.systemPrompt.length}`);
+    console.log(`[generateCode] System prompt length: ${systemPrompt.length}`);
+
+    // Send heartbeat messages while waiting for API response
+    const heartbeat = setInterval(() => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const msg = `\n[${providerInfo.providerName}] Still processing... (${elapsed}s elapsed)\n`;
+      ws.send(JSON.stringify({ type: 'output', data: msg }));
+      broadcastToSpectators(roomCode, playerName, msg);
+    }, 15_000); // Every 15 seconds
 
     let response;
     try {
-      response = await aiProvider.generateCode(config.systemPrompt, userMessage, 8192);
+      response = await aiProvider.generateCode(systemPrompt, userMessage, 8192);
       console.log(`[generateCode] API call returned successfully`);
     } catch (apiError) {
       console.error(`[generateCode] API CALL FAILED:`);
       console.error(`[generateCode] Error type: ${apiError.constructor.name}`);
       console.error(`[generateCode] Error message: ${apiError.message}`);
       throw apiError;
+    } finally {
+      clearInterval(heartbeat);
     }
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[generateCode] API call took ${elapsed}s`);
 
     console.log(`[generateCode] API Response received!`);
     console.log(`[generateCode] Model: ${response.model}`);
@@ -274,12 +351,22 @@ async function generateCode(session, prompt, ws) {
       .replace(/\n?```$/gm, '')
       .trim();
 
-    // Write the code to index.js
-    writeFileSync(indexJsPath, generatedCode);
-    console.log(`[${playerName}] Code written to ${indexJsPath}`);
+    // Guard: never overwrite workspace with empty code
+    if (!generatedCode) {
+      console.warn(`[generateCode] WARNING: AI returned empty code (stop reason: ${response.stopReason}). Keeping existing file.`);
+      const warnMsg = `\n[${providerInfo.providerName}] Warning: AI returned empty response (status: ${response.stopReason}). Your existing code was preserved. Try a shorter/simpler prompt.\n`;
+      ws.send(JSON.stringify({ type: 'output', data: warnMsg }));
+      broadcastToSpectators(roomCode, playerName, warnMsg);
+    } else {
+      // Write the code to index.js (async)
+      await writeFile(indexJsPath, generatedCode);
+      console.log(`[${playerName}] Code written to ${indexJsPath}`);
+    }
 
     // Send output showing success
-    const successMsg = `\n[${providerInfo.providerName}] Code generated successfully!\n[${providerInfo.providerName}] Model: ${providerInfo.modelName}\n[${providerInfo.providerName}] Written to: ${indexJsPath}\n[${providerInfo.providerName}] Lines: ${generatedCode.split('\n').length}\n`;
+    const successMsg = generatedCode
+      ? `\n[${providerInfo.providerName}] Code generated in ${elapsed}s\n[${providerInfo.providerName}] Model: ${providerInfo.modelName}\n[${providerInfo.providerName}] Size: ${generatedCode.length} chars, ${generatedCode.split('\n').length} lines\n[${providerInfo.providerName}] Tokens: ${response.outputTokens} output\n`
+      : `\n[${providerInfo.providerName}] Generation incomplete — existing code preserved.\n`;
     ws.send(JSON.stringify({ type: 'output', data: successMsg }));
     broadcastToSpectators(roomCode, playerName, successMsg);
 
@@ -289,12 +376,25 @@ async function generateCode(session, prompt, ws) {
     ws.send(JSON.stringify({ type: 'output', data: previewMsg }));
     broadcastToSpectators(roomCode, playerName, previewMsg);
 
-    // Send processing complete
+    // Build stats object
+    const stats = {
+      elapsedSeconds: parseFloat(elapsed),
+      codeSize: generatedCode ? generatedCode.length : 0,
+      codeLines: generatedCode ? generatedCode.split('\n').length : 0,
+      outputTokens: response.outputTokens,
+      status: generatedCode ? 'success' : 'incomplete',
+    };
+
+    // Send processing complete with stats
     ws.send(JSON.stringify({
       type: 'processing-complete',
       playerName,
       challenge,
+      stats,
     }));
+
+    // Broadcast stats to spectators
+    broadcastToSpectators(roomCode, playerName, JSON.stringify({ type: 'generation-stats', playerName, stats }));
 
     console.log(`[${playerName}] Processing complete`);
 
@@ -306,6 +406,15 @@ async function generateCode(session, prompt, ws) {
     if (error.status) console.error(`[generateCode] HTTP Status: ${error.status}`);
     if (error.error) console.error(`[generateCode] API Error details:`, JSON.stringify(error.error));
 
+    const errorElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const errorStats = {
+      elapsedSeconds: parseFloat(errorElapsed),
+      codeSize: 0,
+      codeLines: 0,
+      outputTokens: 0,
+      status: 'error',
+    };
+
     const errorMsg = `\n[${providerInfo.providerName}] Error: ${error.message}\n`;
     ws.send(JSON.stringify({ type: 'output', data: errorMsg }));
     broadcastToSpectators(roomCode, playerName, errorMsg);
@@ -315,6 +424,7 @@ async function generateCode(session, prompt, ws) {
       type: 'processing-complete',
       playerName,
       challenge,
+      stats: errorStats,
     }));
   }
 }
@@ -339,12 +449,12 @@ wss.on('connection', (ws) => {
         const playerDir = resolve(WORKSPACES_DIR, namespace);
 
         if (!existsSync(playerDir)) {
-          mkdirSync(playerDir, { recursive: true });
+          await mkdir(playerDir, { recursive: true });
           console.log(`Created player workspace: ${playerDir}`);
         }
 
-        // Initialize workspace files
-        initializeWorkspace(playerDir, playerName, challenge);
+        // Initialize workspace files (async)
+        await initializeWorkspace(playerDir, playerName, challenge);
 
         // Determine model to use (use provided model or default for provider)
         let selectedModel = model;
@@ -366,6 +476,7 @@ wss.on('connection', (ws) => {
           roomCode,
           provider,
           model: selectedModel,
+          lastActivity: Date.now(),
         });
 
         console.log(`Session ${sessionId} using provider: ${provider}, model: ${selectedModel}`);
@@ -387,26 +498,39 @@ wss.on('connection', (ws) => {
 
       } else if (msg.type === 'input') {
         console.log(`[WS] Input received, sessionId: ${sessionId}, data length: ${msg.data?.length}`);
-        console.log(`[WS] Available sessions: ${Array.from(sessions.keys()).join(', ')}`);
 
         const session = sessions.get(sessionId);
         if (session) {
+          // Update last activity
+          session.lastActivity = Date.now();
+
+          // Check processing lock — reject if already processing
+          if (processingLock.get(sessionId)) {
+            console.log(`[${sessionId}] Rejecting input — already processing`);
+            ws.send(JSON.stringify({ type: 'error', message: 'A prompt is already being processed. Please wait.' }));
+            return;
+          }
+
           const input = msg.data.trim();
           console.log(`[${sessionId}] Processing input: "${input.substring(0, 100)}..."`);
 
-          // Generate code using Anthropic API
-          console.log(`[${sessionId}] Calling generateCode...`);
-          await generateCode(session, input, ws);
+          // Set processing lock
+          processingLock.set(sessionId, true);
+          try {
+            await generateCode(session, input, ws);
+          } finally {
+            processingLock.delete(sessionId);
+          }
           console.log(`[${sessionId}] generateCode completed`);
         } else {
           console.log(`[${sessionId}] ERROR: No session found for input!`);
-          console.log(`[WS] Session map has ${sessions.size} entries`);
           ws.send(JSON.stringify({ type: 'error', message: 'No active session' }));
         }
 
       } else if (msg.type === 'kill-session') {
         if (sessionId && sessions.has(sessionId)) {
           sessions.delete(sessionId);
+          processingLock.delete(sessionId);
           console.log(`Session ${sessionId} killed`);
         }
 
@@ -446,6 +570,7 @@ wss.on('connection', (ws) => {
     console.log('WebSocket client disconnected');
     if (sessionId && sessions.has(sessionId)) {
       sessions.delete(sessionId);
+      processingLock.delete(sessionId);
     }
     if (spectatingRoom) {
       const spectators = spectatorConnections.get(spectatingRoom);
@@ -462,5 +587,22 @@ wss.on('connection', (ws) => {
     console.error('WebSocket error:', error);
   });
 });
+
+// Clean up idle sessions every 5 minutes (remove sessions idle for 30+ minutes)
+const SESSION_IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  sessions.forEach((session, sid) => {
+    if (now - (session.lastActivity || 0) > SESSION_IDLE_TIMEOUT) {
+      sessions.delete(sid);
+      processingLock.delete(sid);
+      cleaned++;
+    }
+  });
+  if (cleaned > 0) {
+    console.log(`[Cleanup] Removed ${cleaned} idle session(s). Active: ${sessions.size}`);
+  }
+}, 5 * 60 * 1000);
 
 console.log('Server ready and waiting for connections...');

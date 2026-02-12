@@ -52,6 +52,26 @@ echo "  Ports cleaned up"
 
 echo ""
 echo "========================================="
+echo "Installing Dependencies"
+echo "========================================="
+
+echo ""
+echo "Installing backend dependencies..."
+cd "$SCRIPT_DIR/../backend" && bun install
+echo "Backend dependencies installed."
+
+echo ""
+echo "Installing AI Code Server dependencies..."
+cd "$SCRIPT_DIR/../ai-code-server" && npm install
+echo "AI Code Server dependencies installed."
+
+echo ""
+echo "Installing frontend dependencies..."
+cd "$SCRIPT_DIR/../frontend" && bun install
+echo "Frontend dependencies installed."
+
+echo ""
+echo "========================================="
 echo "Starting Prompt Duel Application"
 echo "========================================="
 

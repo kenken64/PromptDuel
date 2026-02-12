@@ -75,6 +75,7 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
             id: newUser.id,
             username: newUser.username,
             email: newUser.email,
+            timezone: newUser.timezone,
           },
           token,
         };
@@ -145,6 +146,7 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
             id: user.id,
             username: user.username,
             email: user.email,
+            timezone: user.timezone,
           },
           token,
         };
@@ -355,6 +357,61 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
       body: t.Object({
         token: t.String(),
         password: t.String({ minLength: 6 }),
+      }),
+    }
+  )
+  .post(
+    '/update-timezone',
+    async ({ bearer, body, set }) => {
+      const user = await getUserFromToken(bearer);
+      if (!user) {
+        set.status = 401;
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const { timezone } = body;
+
+      // Validate timezone string
+      try {
+        const validTimezones = Intl.supportedValuesOf('timeZone');
+        if (!validTimezones.includes(timezone)) {
+          set.status = 400;
+          return { success: false, error: 'Invalid timezone' };
+        }
+      } catch {
+        // Fallback validation: try to use it
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+        } catch {
+          set.status = 400;
+          return { success: false, error: 'Invalid timezone' };
+        }
+      }
+
+      try {
+        await db
+          .update(users)
+          .set({ timezone })
+          .where(eq(users.id, user.id));
+
+        return {
+          success: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            timezone,
+          },
+        };
+      } catch (error) {
+        console.error('Update timezone error:', error);
+        set.status = 500;
+        return { success: false, error: 'Failed to update timezone' };
+      }
+    },
+    {
+      body: t.Object({
+        timezone: t.String(),
       }),
     }
   )

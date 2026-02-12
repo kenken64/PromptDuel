@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Leaderboard } from './Leaderboard';
 import { getFinalScore, getMultiplier } from '../gameRules';
 import { config } from '../config';
@@ -61,7 +61,7 @@ function getGradeColor(grade: string): string {
   }
 }
 
-export function DuelResults({
+export const DuelResults = React.memo(function DuelResults({
   player1,
   player2,
   winner,
@@ -381,4 +381,4 @@ export function DuelResults({
       </div>
     </div>
   );
-}
+});

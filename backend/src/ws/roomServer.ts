@@ -3,6 +3,7 @@ import { jwt } from '@elysiajs/jwt';
 import { db } from '../db';
 import { users, rooms, roomSpectators, sessions, chatMessages } from '../db/schema';
 import { eq, and, gt } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 
 interface Client {
   id: string;
@@ -75,7 +76,6 @@ function broadcastToRoom(roomCode: string, message: object, excludeClientId?: st
     if (client.id !== excludeClientId && client.ws.readyState === 1) {
       client.ws.send(data);
       sentCount++;
-      console.log(`Broadcast to player ${client.username} (${client.id})`);
     }
   });
 
@@ -83,11 +83,10 @@ function broadcastToRoom(roomCode: string, message: object, excludeClientId?: st
     if (client.id !== excludeClientId && client.ws.readyState === 1) {
       client.ws.send(data);
       sentCount++;
-      console.log(`Broadcast to spectator ${client.username} (${client.id})`);
     }
   });
 
-  console.log(`broadcastToRoom: Sent to ${sentCount} clients in ${roomCode}, message type: ${(message as any).type}`);
+  console.log(`Broadcast ${(message as any).type} to ${sentCount} clients in ${roomCode}`);
 }
 
 // Helper to broadcast only to spectators
@@ -204,30 +203,47 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
               return;
             }
 
-            // Get room from DB
-            const [room] = await db
-              .select()
+            // Single JOIN query for room + player names
+            const p1User = alias(users, 'p1User');
+            const p2User = alias(users, 'p2User');
+
+            const [roomRow] = await db
+              .select({
+                room: rooms,
+                p1Id: p1User.id,
+                p1Username: p1User.username,
+                p2Id: p2User.id,
+                p2Username: p2User.username,
+              })
               .from(rooms)
+              .leftJoin(p1User, eq(rooms.player1Id, p1User.id))
+              .leftJoin(p2User, eq(rooms.player2Id, p2User.id))
               .where(eq(rooms.code, roomCode))
               .limit(1);
 
-            if (!room) {
+            if (!roomRow) {
               ws.send(JSON.stringify({ type: 'error', error: 'Room not found' }));
               return;
             }
 
-            // Determine role
+            const room = roomRow.room;
+            const player1 = roomRow.p1Id ? { id: roomRow.p1Id, username: roomRow.p1Username } : null;
+            const player2 = roomRow.p2Id ? { id: roomRow.p2Id, username: roomRow.p2Username } : null;
+
+            // Determine role — check player IDs from the already-fetched room
             const isPlayer = room.player1Id === client.userId || room.player2Id === client.userId;
-            const [isSpectator] = await db
-              .select()
+
+            // Check spectator membership from joined spectator query
+            const spectatorRows = await db
+              .select({
+                id: users.id,
+                username: users.username,
+              })
               .from(roomSpectators)
-              .where(
-                and(
-                  eq(roomSpectators.roomId, room.id),
-                  eq(roomSpectators.userId, client.userId)
-                )
-              )
-              .limit(1);
+              .innerJoin(users, eq(roomSpectators.userId, users.id))
+              .where(eq(roomSpectators.roomId, room.id));
+
+            const isSpectator = spectatorRows.some(s => s.id === client.userId);
 
             if (!isPlayer && !isSpectator) {
               ws.send(JSON.stringify({ type: 'error', error: 'Not a member of this room' }));
@@ -255,50 +271,26 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
               console.log(`Spectator ${client.username} (${client.userId}) joined room ${roomCode}. Total spectators: ${roomState.spectators.size}`);
             }
 
-            // Send room state to the joining client (moved before broadcast so we can include full state)
-            const [player1] = room.player1Id
-              ? await db
-                  .select({ id: users.id, username: users.username })
-                  .from(users)
-                  .where(eq(users.id, room.player1Id))
-                  .limit(1)
-              : [null];
-
-            const [player2] = room.player2Id
-              ? await db
-                  .select({ id: users.id, username: users.username })
-                  .from(users)
-                  .where(eq(users.id, room.player2Id))
-                  .limit(1)
-              : [null];
-
-            const spectatorRows = await db
-              .select({
-                id: users.id,
-                username: users.username,
-              })
-              .from(roomSpectators)
-              .innerJoin(users, eq(roomSpectators.userId, users.id))
-              .where(eq(roomSpectators.roomId, room.id));
+            const roomStatePayload = {
+              code: room.code,
+              challenge: room.challenge,
+              timerMinutes: room.timerMinutes,
+              status: room.status,
+              player1,
+              player2,
+              player1Ready: room.player1Ready,
+              player2Ready: room.player2Ready,
+              player1Provider: room.player1Provider,
+              player1Model: room.player1Model,
+              player2Provider: room.player2Provider,
+              player2Model: room.player2Model,
+              spectators: spectatorRows,
+            };
 
             ws.send(
               JSON.stringify({
                 type: 'room-state',
-                room: {
-                  code: room.code,
-                  challenge: room.challenge,
-                  timerMinutes: room.timerMinutes,
-                  status: room.status,
-                  player1,
-                  player2,
-                  player1Ready: room.player1Ready,
-                  player2Ready: room.player2Ready,
-                  player1Provider: room.player1Provider,
-                  player1Model: room.player1Model,
-                  player2Provider: room.player2Provider,
-                  player2Model: room.player2Model,
-                  spectators: spectatorRows,
-                },
+                room: roomStatePayload,
                 role: client.role,
               })
             );
@@ -308,21 +300,7 @@ export const roomWebSocket = new Elysia({ prefix: '/ws' })
               type: isPlayer ? 'player-joined' : 'spectator-joined',
               userId: client.userId,
               username: client.username,
-              room: {
-                code: room.code,
-                challenge: room.challenge,
-                timerMinutes: room.timerMinutes,
-                status: room.status,
-                player1,
-                player2,
-                player1Ready: room.player1Ready,
-                player2Ready: room.player2Ready,
-                player1Provider: room.player1Provider,
-                player1Model: room.player1Model,
-                player2Provider: room.player2Provider,
-                player2Model: room.player2Model,
-                spectators: spectatorRows,
-              },
+              room: roomStatePayload,
             }, clientId);
             break;
           }

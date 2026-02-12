@@ -132,7 +132,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const player1HasEndedRef = useRef<boolean>(false);
   const player2HasEndedRef = useRef<boolean>(false);
   const setCurrentTurnRef = useRef<(turn: Player) => void>(() => {});
-  const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  const lastProcessedIndexRef = useRef<number>(0);
   const gameEndedRef = useRef<boolean>(false);
   // Track which player number this browser controls (set in connectPlayer)
   // Used to prevent Supabase sync from overriding local WebSocket-driven processing state
@@ -155,7 +155,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       currentRoomCodeRef.current = room.code;
       // Reset game state for new room
       gameEndedRef.current = false;
-      processedMessageIdsRef.current = new Set();
+      lastProcessedIndexRef.current = 0;
       subscribeToGame(room.code);
     }
   }, [room?.code, subscribeToGame]);
@@ -174,26 +174,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (supabaseMessages.length === 0) return;
 
-    // Check if ANY message contains GAME_END - if so, mark game as ended
-    const hasGameEndMessage = supabaseMessages.some(
-      (msg) => msg.type === 'system' && msg.sender === 'System' && msg.text.startsWith('GAME_END')
-    );
-    if (hasGameEndMessage) {
-      gameEndedRef.current = true;
+    // Only process new messages since last index
+    const startIndex = lastProcessedIndexRef.current;
+    if (startIndex >= supabaseMessages.length) return;
+
+    // Check new messages for GAME_END
+    for (let i = startIndex; i < supabaseMessages.length; i++) {
+      const msg = supabaseMessages[i];
+      if (msg.type === 'system' && msg.sender === 'System' && msg.text.startsWith('GAME_END')) {
+        gameEndedRef.current = true;
+        break;
+      }
     }
 
-    // Process all messages that haven't been processed yet
-    for (const message of supabaseMessages) {
-      // Create a unique ID for each message based on timestamp and content
-      const messageId = `${message.timestamp}-${message.sender}-${message.text.substring(0, 50)}`;
-
-      // Skip if already processed
-      if (processedMessageIdsRef.current.has(messageId)) {
-        continue;
-      }
-
-      // Mark as processed
-      processedMessageIdsRef.current.add(messageId);
+    // Process only new messages
+    for (let i = startIndex; i < supabaseMessages.length; i++) {
+      const message = supabaseMessages[i];
       console.log('[Supabase Sync] Processing message:', message);
 
       // Check if this is a system message
@@ -413,11 +409,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Limit the size of processed message IDs to prevent memory issues
-    if (processedMessageIdsRef.current.size > 500) {
-      const idsArray = Array.from(processedMessageIdsRef.current);
-      processedMessageIdsRef.current = new Set(idsArray.slice(-250));
-    }
+    // Update the last processed index
+    lastProcessedIndexRef.current = supabaseMessages.length;
   }, [supabaseMessages]);
 
   const addGameMessage = useCallback(
@@ -454,11 +447,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setCurrentTurnRef.current = setCurrentTurn;
   }, []);
 
+  const MAX_CONSOLE_LINES = 500;
+
   const addConsoleLog = useCallback((player: Player, log: string) => {
     if (player === 'player1') {
-      setPlayer1Console((prev) => [...prev, log]);
+      setPlayer1Console((prev) => {
+        const next = [...prev, log];
+        return next.length > MAX_CONSOLE_LINES ? next.slice(-MAX_CONSOLE_LINES) : next;
+      });
     } else {
-      setPlayer2Console((prev) => [...prev, log]);
+      setPlayer2Console((prev) => {
+        const next = [...prev, log];
+        return next.length > MAX_CONSOLE_LINES ? next.slice(-MAX_CONSOLE_LINES) : next;
+      });
     }
   }, []);
 
@@ -591,16 +592,35 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               console.log(`Player ${playerNum} processing complete`);
               console.log(`[processing-complete] msg:`, msg);
               setProcessing(false);
-              // Reset the submitting ref
+              // Reset the submitting ref and clear the safety timeout
               if (playerNum === 1) {
                 player1SubmittingRef.current = false;
+                if (player1TimeoutRef.current) {
+                  clearTimeout(player1TimeoutRef.current);
+                  player1TimeoutRef.current = null;
+                }
               } else {
                 player2SubmittingRef.current = false;
+                if (player2TimeoutRef.current) {
+                  clearTimeout(player2TimeoutRef.current);
+                  player2TimeoutRef.current = null;
+                }
               }
               setConsole((prev) => [...prev, `[System] AI finished processing`]);
               // Broadcast completion to both players
               const pName = playerNum === 1 ? player1NameRef.current : player2NameRef.current;
               addGameMessageRef.current('System', `AI finished processing ${pName}'s prompt`, 'system');
+
+              // Display generation stats in chat
+              if (msg.stats) {
+                const { elapsedSeconds, codeSize, codeLines, outputTokens, status } = msg.stats;
+                const statsText = status === 'success'
+                  ? `Generation stats: ${elapsedSeconds}s | ${codeLines} lines | ${codeSize} chars | ${outputTokens} tokens`
+                  : status === 'error'
+                    ? `Generation failed: ${elapsedSeconds}s elapsed`
+                    : `Generation incomplete: ${elapsedSeconds}s elapsed | ${outputTokens} tokens used`;
+                addGameMessageRef.current('System', statsText, 'system');
+              }
 
               console.log(`[processing-complete] playerName=${msg.playerName}, challenge=${msg.challenge}`);
               if (msg.playerName && msg.challenge) {
@@ -953,6 +973,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const player1SubmittingRef = useRef<boolean>(false);
   const player2SubmittingRef = useRef<boolean>(false);
 
+  // Refs to track processing timeout IDs (cleared when processing-complete arrives)
+  const player1TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const player2TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Track previously submitted prompts to block duplicates (saves API costs)
   const player1PromptHistoryRef = useRef<Set<string>>(new Set());
   const player2PromptHistoryRef = useRef<Set<string>>(new Set());
@@ -1026,11 +1050,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         sendPlayerInput(1, prompt + '\n');
 
-        // Timeout fallback - turn switches after processing completes
-        setTimeout(() => {
+        // Safety timeout fallback (5 min) — cleared when processing-complete arrives
+        if (player1TimeoutRef.current) clearTimeout(player1TimeoutRef.current);
+        player1TimeoutRef.current = setTimeout(() => {
+          console.warn('[handleSubmit] Player1 processing timeout (5 min) — force unlocking');
           setPlayer1Processing(false);
           player1SubmittingRef.current = false;
-        }, 120000);
+          player1TimeoutRef.current = null;
+        }, 300000);
 
         // Don't switch turn here - wait for processing to complete
       } else if (player === 'player2' && player2.prompt.trim()) {
@@ -1084,11 +1111,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         sendPlayerInput(2, prompt + '\n');
 
-        // Timeout fallback - turn switches after processing completes
-        setTimeout(() => {
+        // Safety timeout fallback (5 min) — cleared when processing-complete arrives
+        if (player2TimeoutRef.current) clearTimeout(player2TimeoutRef.current);
+        player2TimeoutRef.current = setTimeout(() => {
+          console.warn('[handleSubmit] Player2 processing timeout (5 min) — force unlocking');
           setPlayer2Processing(false);
           player2SubmittingRef.current = false;
-        }, 120000);
+          player2TimeoutRef.current = null;
+        }, 300000);
 
         // Don't switch turn here - wait for processing to complete
       } else {
@@ -1182,7 +1212,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     clearSupabaseMessages();
     unsubscribeFromGame();
     currentRoomCodeRef.current = null;
-    processedMessageIdsRef.current = new Set();
+    lastProcessedIndexRef.current = 0;
     gameEndedRef.current = false;
     setPlayer1Console([]);
     setPlayer2Console([]);
@@ -1202,25 +1232,38 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [disconnectPlayer, clearSupabaseMessages, unsubscribeFromGame]);
 
   // Timer countdown (syncs with game start time to prevent drift)
+  // Uses a ref to avoid recreating the interval every second
+  const timeLeftRef = useRef(timeLeft);
+  useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
+  const handleTimeUpRef = useRef(handleTimeUp);
+  useEffect(() => { handleTimeUpRef.current = handleTimeUp; }, [handleTimeUp]);
+
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        // If we have a game start time, calculate remaining based on elapsed
-        if (gameStartTimeRef.current > 0) {
-          const elapsed = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
-          const remaining = Math.max(0, (gameTimeoutMinutes * 60) - elapsed);
-          setTimeLeft(remaining);
-        } else {
-          // Fallback to local countdown
-          setTimeLeft((time) => Math.max(0, time - 1));
+    if (!isActive) return;
+
+    const interval = setInterval(() => {
+      // If we have a game start time, calculate remaining based on elapsed
+      if (gameStartTimeRef.current > 0) {
+        const elapsed = Math.floor((Date.now() - gameStartTimeRef.current) / 1000);
+        const remaining = Math.max(0, (gameTimeoutMinutes * 60) - elapsed);
+        setTimeLeft(remaining);
+        if (remaining === 0) {
+          handleTimeUpRef.current();
         }
-      }, 1000);
-    } else if (timeLeft === 0 && isActive) {
-      handleTimeUp();
-    }
+      } else {
+        // Fallback to local countdown
+        setTimeLeft((time) => {
+          const next = Math.max(0, time - 1);
+          if (next === 0) {
+            handleTimeUpRef.current();
+          }
+          return next;
+        });
+      }
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, handleTimeUp, gameTimeoutMinutes]);
+  }, [isActive, gameTimeoutMinutes]);
 
   // Cleanup WebSocket connections on unmount
   useEffect(() => {

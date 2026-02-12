@@ -73,6 +73,32 @@ Write-Host "  Ports cleaned up"
 
 Write-Host ""
 Write-Host "========================================="
+Write-Host "Installing Dependencies"
+Write-Host "========================================="
+
+Write-Host ""
+Write-Host "Installing backend dependencies..."
+Push-Location "$ScriptDir\..\backend"
+bun install
+Pop-Location
+Write-Host "Backend dependencies installed."
+
+Write-Host ""
+Write-Host "Installing AI Code Server dependencies..."
+Push-Location "$ScriptDir\..\ai-code-server"
+npm install
+Pop-Location
+Write-Host "AI Code Server dependencies installed."
+
+Write-Host ""
+Write-Host "Installing frontend dependencies..."
+Push-Location "$ScriptDir\..\frontend"
+bun install
+Pop-Location
+Write-Host "Frontend dependencies installed."
+
+Write-Host ""
+Write-Host "========================================="
 Write-Host "Starting Prompt Duel Application"
 Write-Host "========================================="
 

@@ -6,6 +6,7 @@ export const users = sqliteTable('users', {
   username: text('username').notNull().unique(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  timezone: text('timezone').notNull().default('Asia/Singapore'),
   lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
@@ -130,6 +131,22 @@ export const passwordResetTokens = sqliteTable('password_reset_tokens', {
   token: text('token').notNull().unique(),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
   usedAt: integer('used_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// Challenges - single source of truth for challenge metadata and AI system prompts
+export const challenges = sqliteTable('challenges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),              // "BracketValidator - Stack-Based CLI Tool"
+  shortName: text('short_name').notNull(),   // "BracketValidator"
+  difficulty: text('difficulty').notNull(),   // "beginner" | "advanced"
+  description: text('description').notNull(), // Short description for cards
+  longDescription: text('long_description').notNull(), // For info tabs
+  videoUrl: text('video_url').notNull(),     // YouTube embed URL
+  systemPrompt: text('system_prompt').notNull(), // Full AI system prompt
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),

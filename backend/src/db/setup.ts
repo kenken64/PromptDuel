@@ -104,6 +104,20 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  -- Challenges - single source of truth for challenge metadata and AI system prompts
+  CREATE TABLE IF NOT EXISTS challenges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    short_name TEXT NOT NULL,
+    difficulty TEXT NOT NULL,
+    description TEXT NOT NULL,
+    long_description TEXT NOT NULL,
+    video_url TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
   -- Create indexes for better query performance
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
@@ -220,6 +234,70 @@ if (existingPrompts2.count === 0) {
   console.log('Challenge 2 prompts already exist, skipping seed.');
 }
 
+// Seed challenges table
+const existingChallenges = db.query('SELECT COUNT(*) as count FROM challenges').get() as { count: number };
+if (existingChallenges.count === 0) {
+  console.log('Seeding challenges...');
+  const insertChallenge = db.prepare(
+    'INSERT INTO challenges (id, name, short_name, difficulty, description, long_description, video_url, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+
+  insertChallenge.run(
+    1,
+    'BracketValidator - Stack-Based CLI Tool',
+    'BracketValidator',
+    'beginner',
+    'Perfect for newcomers. Learn the basics of prompt engineering with a straightforward coding challenge.',
+    'Watch the video above for challenge requirements. Build a Node.js CLI application based on the specifications provided.',
+    'https://www.youtube.com/embed/dEV5yZeD4bA',
+    `You are a coding assistant helping build a bracket validation CLI tool in Node.js.
+
+## Task
+Build a CLI tool that validates whether brackets in a string are properly matched.
+
+## Requirements
+- Node.js ES module (use import/export)
+- CLI with interactive mode (readline) or argument mode
+- Stack-based bracket validation algorithm
+- Support three bracket types: (), [], {}
+- Ignore non-bracket characters
+- Return validation result with error position if invalid
+
+## Output Format
+Return ONLY the complete code for index.js. No explanations, no markdown code blocks, just the raw JavaScript code.
+The code must be complete and runnable with "node index.js".`
+  );
+
+  insertChallenge.run(
+    2,
+    'QuantumHeist - Terminal Pathfinding Game',
+    'QuantumHeist',
+    'advanced',
+    'For experienced prompters. Test your skills with a complex, multi-step coding challenge.',
+    'Watch the video above for challenge requirements. Build a Node.js terminal application based on the specifications provided.',
+    'https://www.youtube.com/embed/N4PRqcKdj-8',
+    `You are a coding assistant helping build a terminal-based pathfinding puzzle game in Node.js.
+
+## Task
+Build a grid-based puzzle game with pathfinding using Dijkstra's algorithm.
+
+## Requirements
+- Node.js ES module (use import/export)
+- Grid navigation with obstacles
+- Implement Dijkstra's algorithm for pathfinding
+- Console-based display
+- Collectibles and obstacles
+
+## Output Format
+Return ONLY the complete code for index.js. No explanations, no markdown code blocks, just the raw JavaScript code.
+The code must be complete and runnable with "node index.js".`
+  );
+
+  console.log('Challenges seeded!');
+} else {
+  console.log('Challenges already exist, skipping seed.');
+}
+
 // Migration: Add provider columns to existing rooms table if they don't exist
 try {
   const tableInfo = db.query("PRAGMA table_info(rooms)").all() as { name: string }[];
@@ -283,6 +361,39 @@ try {
   console.log('Provider, results, timer, and penalty columns migration complete!');
 } catch (migrationError) {
   console.error('Migration error (may be safe to ignore if columns exist):', migrationError);
+}
+
+// Migration: Add missing columns to users table (password_hash, last_login_at)
+try {
+  const usersTableInfo2 = db.query("PRAGMA table_info(users)").all() as { name: string }[];
+  const usersColumns2 = usersTableInfo2.map(col => col.name);
+
+  if (!usersColumns2.includes('password_hash')) {
+    console.log('Adding password_hash column to users...');
+    db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''");
+    console.log('password_hash column added!');
+  }
+  if (!usersColumns2.includes('last_login_at')) {
+    console.log('Adding last_login_at column to users...');
+    db.exec("ALTER TABLE users ADD COLUMN last_login_at INTEGER");
+    console.log('last_login_at column added!');
+  }
+} catch (migrationError) {
+  console.error('Users columns migration error:', migrationError);
+}
+
+// Migration: Add timezone column to users table
+try {
+  const usersTableInfo = db.query("PRAGMA table_info(users)").all() as { name: string }[];
+  const usersColumnNames = usersTableInfo.map(col => col.name);
+
+  if (!usersColumnNames.includes('timezone')) {
+    console.log('Adding timezone column to users...');
+    db.exec("ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Singapore'");
+    console.log('Timezone column added!');
+  }
+} catch (migrationError) {
+  console.error('Timezone migration error:', migrationError);
 }
 
 console.log('Database setup complete!');

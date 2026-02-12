@@ -31,6 +31,7 @@ interface MobileResultsLayoutProps {
   };
   samplePrompts: ChallengePrompt[];
   onPlayAgain: () => void;
+  onDownloadWorkspace: () => void;
   isLoadingResults?: boolean;
 }
 
@@ -44,6 +45,7 @@ export function MobileResultsLayout({
   roomData,
   samplePrompts,
   onPlayAgain,
+  onDownloadWorkspace,
   isLoadingResults = false,
 }: MobileResultsLayoutProps) {
   const [activeTab, setActiveTab] = useState<'scores' | 'details' | 'samples'>('scores');
@@ -354,8 +356,15 @@ export function MobileResultsLayout({
           </div>
         )}
 
-        {/* Back to Lobby Button */}
-        <div style={{ marginTop: '1.5rem' }}>
+        {/* Action Buttons */}
+        <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <button
+            onClick={onDownloadWorkspace}
+            className="nes-btn is-primary"
+            style={{ width: '100%', fontSize: '0.55rem' }}
+          >
+            Download My Code
+          </button>
           <button
             onClick={onPlayAgain}
             className="nes-btn is-success"
