@@ -273,7 +273,146 @@ sequenceDiagram
     Note over G: Forces prompt submissions to close
 ```
 
-### 9. Sync "Processing" State (Turn Integrity)
+## 9. Evaluation Engine
+
+The evaluation engine (`backend/src/evaluate.ts`) is a **static analysis** system that scores player solutions by reading workspace files and checking for the presence of specific code patterns. It does **not** execute the code.
+
+### Evaluation Flow
+
+```mermaid
+sequenceDiagram
+    participant G as GameContext
+    participant B as Backend API
+    participant FS as File System
+    participant W as Workspace
+
+    G->>B: POST /evaluate (playerName, challenge)
+    B->>W: Resolve workspace path
+    Note over W: /workspaces/{player}_challenge{id}/
+    B->>FS: Read all .js files in workspace
+    FS-->>B: Source code content
+    B->>B: Check for template-only code
+    B->>B: Run category scoring (pattern matching)
+    B->>B: Calculate total score & grade
+    B-->>G: EvaluationResult (scores, feedback, grade)
+```
+
+### Scoring Pipeline
+
+```mermaid
+graph LR
+    A[Read Workspace Files] --> B{Template Only?}
+    B -->|Yes| C[Score: 0 across all categories]
+    B -->|No| D[Run Category Checks]
+    D --> E[Sum Category Scores]
+    E --> F[Calculate Percentage]
+    F --> G[Assign Grade A-F]
+    G --> H[Return EvaluationResult]
+```
+
+### Template Detection
+
+Before scoring, the engine checks if the workspace contains only boilerplate code. A submission is considered **template-only** if:
+- No `.js` files exist in the workspace
+- Code contains `"// Your code goes here"` and is under 300 characters (Challenge 1) or 400 characters (Challenge 2)
+- Code contains `"Hello from"` (default starter content)
+- Total code length is under 200 characters (Challenge 1) or 300 characters (Challenge 2)
+
+Template-only submissions receive **0 points** across all categories.
+
+### Challenge 1: BracketValidator (100 points)
+
+Static analysis checks for bracket validation implementation patterns:
+
+```mermaid
+graph TD
+    subgraph "Functionality (40 pts)"
+        F1["Stack operations: push/pop (+10)"]
+        F2["Bracket types handled: 3+ types (+15), 2 (+10), 1 (+5)"]
+        F3["Returns true/false result (+8)"]
+        F4["Bracket pair mapping defined (+7)"]
+    end
+
+    subgraph "Algorithm Efficiency (20 pts)"
+        A1["Array as stack + loop = O(n) approach (+12)"]
+        A2["Empty stack check with .length === 0 (+8)"]
+    end
+
+    subgraph "Error Handling (15 pts)"
+        E1["Unmatched bracket detection (+5)"]
+        E2["Unclosed bracket detection (+5)"]
+        E3["Error position tracking (+5)"]
+    end
+
+    subgraph "Code Quality (15 pts)"
+        Q1["Named validation function (+5)"]
+        Q2["Modern JS syntax: const/let (+4)"]
+        Q3["Module exports (+3)"]
+        Q4["Comments present (+3)"]
+    end
+
+    subgraph "CLI Implementation (10 pts)"
+        C1["process.argv handling (+3)"]
+        C2["Interactive mode: readline/prompt (+4)"]
+        C3["Help option (+3)"]
+    end
+```
+
+### Challenge 2: QuantumHeist (100 points)
+
+Static analysis checks for pathfinding game implementation patterns:
+
+| Category | Max | Key Patterns Checked |
+|----------|-----|---------------------|
+| Algorithm Design | 25 | Dijkstra (distance + visited), BFS (queue + visited), A* (heuristic + priority), path reconstruction, neighbor exploration |
+| Data Structures | 20 | Priority queue/MinHeap, bitmask state tracking (`<<`, `&`, `\|`), 2D grid access, Set/Map usage |
+| Game Mechanics | 20 | Grid parsing, collectible system (gem/key), portal teleportation, laser/door obstacles, start/end detection |
+| Code Quality | 15 | Class-based design, 3+ named functions, ES6+ syntax, module exports, code organization |
+| Complexity Analysis | 10 | Time complexity `O(...)` documented, space complexity documented |
+| Testing | 5 | Test cases with expect/assert, example runs |
+| Performance | 3 | Memoization/caching, early returns |
+| Documentation | 2 | JSDoc comments, 5+ inline comments |
+
+### Grading Scale
+
+```mermaid
+graph LR
+    A["90-100% → A"] --> B["80-89% → B"]
+    B --> C["70-79% → C"]
+    C --> D["60-69% → D"]
+    D --> E["0-59% → F"]
+```
+
+### Final Score Calculation
+
+The final score combines the raw evaluation score with a **prompt efficiency multiplier** (defined in `frontend/src/gameRules.ts`):
+
+```
+FinalScore = RawScore × Multiplier(promptsUsed)
+```
+
+```mermaid
+graph LR
+    subgraph "Multiplier Table"
+        P1["1 prompt → 0.3×"]
+        P2["2 prompts → 0.5×"]
+        P3["3 prompts → 0.7×"]
+        P4["4 prompts → 0.85×"]
+        P5["5 prompts → 0.9×"]
+        P6["6 prompts → 0.95×"]
+        P7["7 prompts → 1.0×"]
+    end
+```
+
+> **Design rationale**: Using more prompts yields a higher multiplier, encouraging iterative refinement over "lucky" one-shot attempts.
+
+### Output Artifacts
+
+After evaluation, the engine can generate:
+- **EvaluationResult object**: Returned to the frontend with per-category scores, feedback, and overall grade
+- **Grades Markdown file**: Saved to `/workspaces/grades_{timestamp}.md` with a comparison table of both players
+
+## 10. Sync "Processing" State (Turn Integrity)
 To prevent prompt flooding or turn-skipping, the system enforces a strict "Processing" lock.
 
 *   **Trigger**: `processing-started` event from AI Code Server.
